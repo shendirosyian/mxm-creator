@@ -1,0 +1,47 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Netlify Functions rewrites and redirects
+[[redirects]]
+  from = "/api/generate-image"
+  to = "/.netlify/functions/generate-image"
+  status = 200
+
+[[redirects]]
+  from = "/api/check-job"
+  to = "/.netlify/functions/check-job"
+  status = 200
+
+[[redirects]]
+  from = "/api/process-image"
+  to = "/.netlify/functions/process-image"
+  status = 200
+
+[[redirects]]
+  from = "/api/export-image"
+  to = "/.netlify/functions/export-image"
+  status = 200
+
+# Legacy compatibility rewrite
+[[redirects]]
+  from = "/api/generate-look"
+  to = "/.netlify/functions/generate-image"
+  status = 200
+
+# Single Page Application fallback
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer-when-downgrade"

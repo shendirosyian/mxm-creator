@@ -1,0 +1,6 @@
+{
+  "name": "MXM CREATOR",
+  "description": "AI Virtual Styling & Character Transformation Studio for professional designers, creative directors, and visual production teams. Create. Customize. Transform.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

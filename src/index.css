@@ -1,0 +1,53 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --color-canvas: #0b0d0e;
+  --color-surface-subtle: #121417;
+  --color-surface: #181b1f;
+  --color-surface-raised: #21252b;
+  --color-surface-border: rgba(255, 255, 255, 0.08);
+  --color-accent: #00e599;
+  --color-accent-hover: #00ffaa;
+}
+
+/* Studio Transparency Checkerboard Pattern */
+.bg-checkerboard {
+  background-color: #121417;
+  background-image: 
+    linear-gradient(45deg, #1c2024 25%, transparent 25%), 
+    linear-gradient(-45deg, #1c2024 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #1c2024 75%), 
+    linear-gradient(-45deg, transparent 75%, #1c2024 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+.bg-checkerboard-light {
+  background-color: #f1f3f5;
+  background-image: 
+    linear-gradient(45deg, #e4e7eb 25%, transparent 25%), 
+    linear-gradient(-45deg, #e4e7eb 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, #e4e7eb 75%), 
+    linear-gradient(-45deg, transparent 75%, #e4e7eb 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+/* Custom subtle scrollbars for creative studio workspace */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
