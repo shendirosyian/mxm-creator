@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, FolderKanban, Download, RefreshCw } from 'lucide-react';
+import { Sparkles, FolderKanban, Download, RefreshCw, Settings } from 'lucide-react';
 
 interface NavbarProps {
   currentTab: 'create' | 'creations';
@@ -7,6 +7,7 @@ interface NavbarProps {
   onOpenExport?: () => void;
   canExport?: boolean;
   onResetWorkspace?: () => void;
+  onOpenSettings?: () => void;
   savedCreationsCount: number;
 }
 
@@ -16,6 +17,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenExport,
   canExport = false,
   onResetWorkspace,
+  onOpenSettings,
   savedCreationsCount,
 }) => {
   return (
@@ -78,14 +80,26 @@ export const Navbar: React.FC<NavbarProps> = ({
           </button>
         </nav>
 
-        {/* Zone 3: 1 Primary Action */}
-        <div className="flex items-center gap-3 shrink-0">
+        {/* Zone 3: 1 Primary Action + Settings & Reset */}
+        <div className="flex items-center gap-2.5 shrink-0">
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              title="Gemini API Connection & Settings"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-neutral-300 hover:text-white hover:bg-white/[0.06] rounded border border-white/10 transition-colors whitespace-nowrap shadow-xs"
+            >
+              <Settings className="w-3.5 h-3.5 text-[#00e599]" />
+              <span>API Settings</span>
+            </button>
+          )}
+
           {onResetWorkspace && currentTab === 'create' && (
             <button
               type="button"
               onClick={onResetWorkspace}
               title="Reset workspace to start fresh"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.04] rounded transition-colors whitespace-nowrap"
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs text-neutral-400 hover:text-neutral-200 hover:bg-white/[0.04] rounded transition-colors whitespace-nowrap"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Reset</span>

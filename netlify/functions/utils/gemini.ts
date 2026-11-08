@@ -36,6 +36,25 @@ export function getGeminiConfig(): GeminiCredentials | null {
   return { apiKey, model };
 }
 
+export interface ConflictingEnvReport {
+  hasGoogleApiKey: boolean;
+  hasGoogleGenAiUseVertexAi: boolean;
+  hasGoogleAppCredentials: boolean;
+  hasAnyConflict: boolean;
+}
+
+export function checkConflictingEnv(): ConflictingEnvReport {
+  const hasGoogleApiKey = Boolean(process.env.GOOGLE_API_KEY);
+  const hasGoogleGenAiUseVertexAi = Boolean(process.env.GOOGLE_GENAI_USE_VERTEXAI);
+  const hasGoogleAppCredentials = Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS);
+  return {
+    hasGoogleApiKey,
+    hasGoogleGenAiUseVertexAi,
+    hasGoogleAppCredentials,
+    hasAnyConflict: hasGoogleApiKey || hasGoogleGenAiUseVertexAi || hasGoogleAppCredentials,
+  };
+}
+
 // Helper to mask API key for safe debugging without leaking secrets
 export function getMaskedApiKey(key: string): string {
   if (!key) return 'NOT_CONFIGURED';
@@ -81,8 +100,9 @@ export async function runGeminiStyling(options: RunGeminiStylingOptions): Promis
     };
   }
 
-  const modelToUse = config.model;
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelToUse)}:generateContent`;
+  // Native Gemini Developer API REST Endpoint for gemini-3.1-flash-lite-image
+  const modelToUse = 'gemini-3.1-flash-lite-image';
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent`;
 
   try {
     const parts: any[] = [];
@@ -133,15 +153,15 @@ export async function runGeminiStyling(options: RunGeminiStylingOptions): Promis
       },
     };
 
-    // Official native Gemini API request:
-    // Uses x-goog-api-key header exclusively.
-    // NEVER sends 'Authorization: Bearer' which triggers 401 ACCESS_TOKEN_TYPE_UNSUPPORTED.
+    // Official native Gemini Developer API request:
+    // Header must be exactly:
+    // x-goog-api-key: process.env.GEMINI_API_KEY
+    // Content-Type: application/json
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-goog-api-key': config.apiKey,
-        'User-Agent': 'aistudio-build',
       },
       body: JSON.stringify(requestBody),
     });
@@ -242,7 +262,9 @@ export async function runGeminiDiagnostic(): Promise<{
   endpointTested: string;
   modelTested: string;
   sanitizedMessage: string;
+  conflictingEnv: ConflictingEnvReport;
 }> {
+  const conflictingEnv = checkConflictingEnv();
   const config = getGeminiConfig();
   const hasApiKey = Boolean(config?.apiKey);
   const maskedKey = config ? getMaskedApiKey(config.apiKey) : 'NOT_CONFIGURED';
@@ -260,6 +282,7 @@ export async function runGeminiDiagnostic(): Promise<{
       endpointTested: endpoint,
       modelTested: testModel,
       sanitizedMessage: 'GEMINI_API_KEY is not defined in the server environment.',
+      conflictingEnv,
     };
   }
 
@@ -269,7 +292,6 @@ export async function runGeminiDiagnostic(): Promise<{
       headers: {
         'Content-Type': 'application/json',
         'x-goog-api-key': config.apiKey,
-        'User-Agent': 'aistudio-build',
       },
       body: JSON.stringify({
         contents: [
@@ -297,7 +319,8 @@ export async function runGeminiDiagnostic(): Promise<{
         authMethod: 'x-goog-api-key',
         endpointTested: endpoint,
         modelTested: testModel,
-        sanitizedMessage: 'Authentication successful. Official Gemini Developer API connected using x-goog-api-key.',
+        sanitizedMessage: 'Authentication successful. Native Gemini Developer API connected using x-goog-api-key.',
+        conflictingEnv,
       };
     }
 
@@ -328,6 +351,7 @@ export async function runGeminiDiagnostic(): Promise<{
       endpointTested: endpoint,
       modelTested: testModel,
       sanitizedMessage: safeExplanation,
+      conflictingEnv,
     };
   } catch (fetchErr: any) {
     return {
@@ -340,6 +364,7 @@ export async function runGeminiDiagnostic(): Promise<{
       endpointTested: endpoint,
       modelTested: testModel,
       sanitizedMessage: `Failed to connect to Google Generative Language endpoint: ${fetchErr?.message || fetchErr}`,
+      conflictingEnv,
     };
   }
 }

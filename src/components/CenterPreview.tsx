@@ -31,6 +31,7 @@ interface CenterPreviewProps {
   setupErrorMessage?: string | null;
   onRetry?: () => void;
   onDismissError?: () => void;
+  onOpenSettings?: () => void;
 }
 
 type ViewMode = 'split' | 'generated' | 'original' | 'transparent' | 'sideBySide';
@@ -53,6 +54,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
   setupErrorMessage,
   onRetry,
   onDismissError,
+  onOpenSettings,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [sliderPos, setSliderPos] = useState<number>(50); // percentage
@@ -189,15 +191,16 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
         )}
 
         <div className="mt-5 flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleRunDiagnostic}
-            disabled={diagnosticResult?.loading}
-            className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#181b1f] px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
-          >
-            <Sparkles className="h-3 w-3 text-[#00e599]" />
-            <span>Test Connection</span>
-          </button>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#181b1f] px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
+            >
+              <Sparkles className="h-3 w-3 text-[#00e599]" />
+              <span>API Settings</span>
+            </button>
+          )}
           {onRetry && (
             <button
               type="button"

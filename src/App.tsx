@@ -10,6 +10,7 @@ import { ExportStudioModal } from './components/ExportStudioModal';
 import { SelectiveBrushModal } from './components/SelectiveBrushModal';
 import { MyCreations } from './components/MyCreations';
 import { OutfitLibraryModal } from './components/OutfitLibraryModal';
+import { ApiSettingsModal } from './components/ApiSettingsModal';
 import {
   PlayerAsset,
   GarmentAsset,
@@ -66,6 +67,7 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState<boolean>(false);
   const [isBrushOpen, setIsBrushOpen] = useState<boolean>(false);
   const [isOutfitLibraryOpen, setIsOutfitLibraryOpen] = useState<boolean>(false);
+  const [isApiSettingsOpen, setIsApiSettingsOpen] = useState<boolean>(false);
 
   // Persistent Project records & Outfit Library
   const [projects, setProjects] = useState<ProjectRecord[]>([]);
@@ -492,6 +494,7 @@ export default function App() {
         onOpenExport={() => setIsExportOpen(true)}
         canExport={Boolean(currentGeneratedImage)}
         onResetWorkspace={handleResetWorkspace}
+        onOpenSettings={() => setIsApiSettingsOpen(true)}
         savedCreationsCount={projects.length}
       />
 
@@ -623,6 +626,7 @@ export default function App() {
                   setIsQuotaError(false);
                   setErrorNotice(null);
                 }}
+                onOpenSettings={() => setIsApiSettingsOpen(true)}
               />
             </section>
 
@@ -685,6 +689,14 @@ export default function App() {
           onSaveCurrentAsOutfit={handleSaveCurrentAsOutfit}
           onApplyOutfit={handleApplyOutfit}
           onDeleteOutfit={handleDeleteOutfit}
+        />
+      )}
+
+      {/* 4. Gemini API Connection Settings Modal */}
+      {isApiSettingsOpen && (
+        <ApiSettingsModal
+          isOpen={isApiSettingsOpen}
+          onClose={() => setIsApiSettingsOpen(false)}
         />
       )}
     </div>
