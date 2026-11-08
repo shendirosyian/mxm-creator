@@ -4,11 +4,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
 import { handler as generateImageHandler } from './netlify/functions/generate-image';
 import { handler as checkJobHandler } from './netlify/functions/check-job';
 import { handler as processImageHandler } from './netlify/functions/process-image';
 import { handler as exportImageHandler } from './netlify/functions/export-image';
+import { handler as geminiDiagnosticHandler } from './netlify/functions/gemini-diagnostic';
 
 dotenv.config();
 
@@ -62,16 +62,11 @@ app.all('/api/process-image', netlifyAdapter(processImageHandler));
 app.all('/.netlify/functions/export-image', netlifyAdapter(exportImageHandler));
 app.all('/api/export-image', netlifyAdapter(exportImageHandler));
 
-// 2. Smart Asset Analysis (Optional Gemini 3.8 Flash Vision for reference auditing)
-const geminiApiKey = process.env.GEMINI_API_KEY || '';
-const ai = new GoogleGenAI({
-  apiKey: geminiApiKey,
-  httpOptions: {
-    headers: {
-      'User-Agent': 'aistudio-build',
-    },
-  },
-});
+app.all('/.netlify/functions/gemini-diagnostic', netlifyAdapter(geminiDiagnosticHandler));
+app.all('/api/gemini-diagnostic', netlifyAdapter(geminiDiagnosticHandler));
+
+// 2. Smart Asset Analysis (Uses official native Gemini Developer API with x-goog-api-key)
+const geminiApiKey = process.env.GEMINI_API_KEY?.trim() || '';
 
 function cleanBase64(input: string): { data: string; mimeType: string } {
   if (input.startsWith('data:')) {
@@ -118,8 +113,8 @@ app.post('/api/analyze-assets', async (req: Request, res: Response) => {
     const parts: any[] = [
       {
         inlineData: {
-          data: playerData,
           mimeType: playerMime,
+          data: playerData,
         },
       },
       {
@@ -127,16 +122,39 @@ app.post('/api/analyze-assets', async (req: Request, res: Response) => {
       },
     ];
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: { parts },
-      config: {
-        responseMimeType: 'application/json',
+    const endpoint = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent';
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': geminiApiKey,
+        'User-Agent': 'aistudio-build',
       },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+        },
+      }),
     });
 
-    const reportJson = JSON.parse(response.text || '{}');
-    return res.json(reportJson);
+    if (response.ok) {
+      const respJson = await response.json();
+      const rawText = respJson?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (rawText) {
+        const reportJson = JSON.parse(rawText);
+        return res.json(reportJson);
+      }
+    }
+
+    return res.json({
+      player: {
+        identityDetected: true,
+        bodyVisibility: 'Half Body',
+        quality: 'GOOD',
+      },
+      garments: {},
+    });
   } catch (error) {
     return res.json({
       player: {

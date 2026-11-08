@@ -59,6 +59,25 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(1); // 1 = fit, 1.5, 2
   const [checkerboard, setCheckerboard] = useState<CheckerboardMode>('dark');
   const [showShadowWithTransparent, setShowShadowWithTransparent] = useState(false);
+  const [diagnosticResult, setDiagnosticResult] = useState<{
+    loading: boolean;
+    data?: any;
+    error?: string;
+  } | null>(null);
+
+  const handleRunDiagnostic = async () => {
+    setDiagnosticResult({ loading: true });
+    try {
+      const res = await fetch('/.netlify/functions/gemini-diagnostic');
+      const data = await res.json();
+      setDiagnosticResult({ loading: false, data });
+    } catch (err: any) {
+      setDiagnosticResult({
+        loading: false,
+        error: err?.message || 'Failed to connect to diagnostic endpoint.',
+      });
+    }
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const isDraggingSlider = useRef(false);
@@ -134,7 +153,51 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           </div>
         </div>
 
-        <div className="mt-6 flex items-center gap-3">
+        {/* Diagnostic Connection Test Result */}
+        {diagnosticResult && (
+          <div
+            className={`mt-4 w-full max-w-md rounded-lg border p-3 text-left text-xs ${
+              diagnosticResult.loading
+                ? 'border-white/10 bg-[#16181b] text-neutral-300'
+                : diagnosticResult.data?.success
+                ? 'border-[#00e599]/30 bg-[#00e599]/10 text-[#00e599]'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+            }`}
+          >
+            {diagnosticResult.loading ? (
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 animate-spin text-[#00e599]" />
+                <span>Testing native Gemini API connection (x-goog-api-key)...</span>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between font-mono text-[11px] font-semibold">
+                  <span>Status: HTTP {diagnosticResult.data?.statusCode || (diagnosticResult.error ? 'Error' : 500)}</span>
+                  <span>Method: x-goog-api-key</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  {diagnosticResult.data?.sanitizedMessage || diagnosticResult.error}
+                </p>
+                {diagnosticResult.data?.maskedKey && (
+                  <p className="font-mono text-[10px] text-neutral-400">
+                    Key: {diagnosticResult.data.maskedKey}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-5 flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleRunDiagnostic}
+            disabled={diagnosticResult?.loading}
+            className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#181b1f] px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
+          >
+            <Sparkles className="h-3 w-3 text-[#00e599]" />
+            <span>Test Connection</span>
+          </button>
           {onRetry && (
             <button
               type="button"
