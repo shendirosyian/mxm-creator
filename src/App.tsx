@@ -232,7 +232,12 @@ export default function App() {
         }),
       });
 
-      let data = await response.json();
+      let data: any = {};
+      try {
+        data = await response.json();
+      } catch {
+        data = { error: `Server returned HTTP ${response.status}` };
+      }
 
       // If asynchronous job processing is returned, poll check-job
       if (response.ok && data.jobId && (data.status === 'pending' || data.status === 'processing')) {
@@ -247,7 +252,10 @@ export default function App() {
               data = { ...checkData.result, success: true };
               break;
             } else if (checkData.status === 'failed') {
-              throw new Error(checkData.error || 'Generation failed.');
+              if (checkData.requiresCredentials) setRequiresCredentials(true);
+              if (checkData.isQuotaExhausted) setIsQuotaError(true);
+              setErrorNotice(checkData.error || 'Generation failed.');
+              return;
             }
           }
           attempts++;
@@ -255,9 +263,9 @@ export default function App() {
       }
 
       if (!response.ok || !data.images || data.images.length === 0) {
-        if (data.requiresCredentials) {
+        if (data.requiresCredentials || response.status === 401) {
           setRequiresCredentials(true);
-        } else if (data.isQuotaExhausted) {
+        } else if (data.isQuotaExhausted || response.status === 429) {
           setIsQuotaError(true);
         }
         setErrorNotice(data.error || 'Failed to generate visual look.');

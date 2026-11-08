@@ -13,13 +13,31 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <script>
-      // Suppress harmless Vite HMR WebSocket connection errors in sandbox iframe
-      window.addEventListener('error', function(e) {
-        if (e && (e.filename?.includes('@vite/client') || (typeof e.message === 'string' && e.message.includes('WebSocket')))) {
-          e.stopImmediatePropagation();
-          e.preventDefault();
+      (function() {
+        // Suppress harmless Vite HMR WebSocket connection errors in sandbox iframe environment
+        function isViteWsError(err, file) {
+          var msg = String(err && (err.message || err.stack) ? (err.message || err.stack) : err || '');
+          var f = String(file || (err && err.filename) || '');
+          return f.indexOf('@vite/client') !== -1 || msg.indexOf('@vite/client') !== -1 || msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite:ws') !== -1;
         }
-      }, true);
+
+        window.addEventListener('error', function(e) {
+          if (isViteWsError(e ? (e.error || e.message) : null, e ? e.filename : null)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+
+        window.addEventListener('unhandledrejection', function(e) {
+          var reason = e ? (e.reason || (e.detail && e.detail.reason)) : null;
+          if (isViteWsError(reason)) {
+            e.stopImmediatePropagation();
+            e.preventDefault();
+            return true;
+          }
+        }, true);
+      })();
     </script>
   </head>
   <body class="bg-[#0b0d0e] text-[#f1f3f5] antialiased selection:bg-[#00e599]/20 selection:text-[#00e599] min-h-screen">

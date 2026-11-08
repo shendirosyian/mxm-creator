@@ -96,7 +96,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
     ? shadowImage
     : transparentImage || generatedImage;
 
-  // External Service Configuration Setup State (Cloudflare Credentials Required)
+  // External Service Configuration Setup State (Gemini API Key Required)
   if (requiresCredentials && !generatedImage) {
     return (
       <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-xl border border-amber-500/30 bg-[#0e1012] p-8 text-center">
@@ -104,10 +104,10 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           <Layers className="h-8 w-8 text-amber-400" />
         </div>
         <h2 className="text-base font-bold text-white uppercase tracking-wider">
-          Cloudflare Workers AI Setup Required
+          Gemini API Key Required
         </h2>
         <p className="mt-2 max-w-md text-xs text-neutral-300 leading-relaxed">
-          MXM CREATOR connects to Cloudflare Workers AI (<span className="font-mono text-neutral-200">@cf/black-forest-labs/flux-2-klein-4b</span>) via Netlify Functions.
+          MXM CREATOR connects to the Google Gemini API (<span className="font-mono text-neutral-200">gemini-3.1-flash-lite-image</span>) via Netlify Functions.
         </p>
 
         <div className="mt-5 w-full max-w-md rounded-lg border border-white/[0.08] bg-[#14171a] p-4 text-left text-xs text-neutral-300 space-y-2.5">
@@ -117,20 +117,20 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">1</span>
             <div>
-              <span className="font-mono text-[#00e599] text-[11px]">CLOUDFLARE_ACCOUNT_ID</span>
-              <p className="text-[10px] text-neutral-400">Found in Cloudflare Dashboard &gt; Workers &amp; Pages overview.</p>
+              <span className="font-mono text-[#00e599] text-[11px]">GEMINI_API_KEY</span>
+              <p className="text-[10px] text-neutral-400">Set in Netlify site settings (Site configuration &gt; Environment variables) or in AI Studio Secrets.</p>
             </div>
           </div>
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">2</span>
             <div>
-              <span className="font-mono text-[#00e599] text-[11px]">CLOUDFLARE_API_TOKEN</span>
-              <p className="text-[10px] text-neutral-400">Created with Workers AI (Read/Edit) permission.</p>
+              <span className="font-mono text-neutral-300 text-[11px]">GEMINI_IMAGE_MODEL (Optional)</span>
+              <p className="text-[10px] text-neutral-400">Default: <span className="font-mono text-neutral-200">gemini-3.1-flash-lite-image</span>.</p>
             </div>
           </div>
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">3</span>
-            <p className="text-[11px]">Set these in your Netlify site settings (<strong className="text-white">Site configuration &gt; Environment variables</strong>) or in your local <strong className="text-white">.env</strong> file.</p>
+            <p className="text-[11px]">Click <strong className="text-[#00e599]">Retry Generation</strong> once your key is configured.</p>
           </div>
         </div>
 
@@ -168,14 +168,22 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           <Layers className="h-8 w-8 text-amber-400" />
         </div>
         <h2 className="text-base font-bold text-white uppercase tracking-wider">
-          Workers AI Free Quota Reached
+          Gemini Free Quota Limit Reached
         </h2>
         <p className="mt-2 max-w-md text-xs text-neutral-300 leading-relaxed">
-          {setupErrorMessage || 'Cloudflare Workers AI free allocation quota reached. Per the free usage policy, paid services are not automatically activated.'}
+          {setupErrorMessage || 'Google Gemini Free Tier request quota reached for the selected image model. Per the cost-safety policy, paid services are never automatically activated.'}
         </p>
 
-        <p className="mt-3 text-[11px] text-neutral-400">
-          Cloudflare free tier limits reset every minute/hour. You can retry in a few moments.
+        <p className="mt-3 text-[11px] text-neutral-400 max-w-md">
+          Gemini Free Tier quotas reset daily. Please wait for the quota window to reset, or check your rate limits at{' '}
+          <a
+            href="https://aistudio.google.com/docs/rate-limits"
+            target="_blank"
+            rel="noreferrer"
+            className="text-[#00e599] underline hover:text-[#00ffaa]"
+          >
+            aistudio.google.com/docs/rate-limits
+          </a>.
         </p>
 
         <div className="mt-6 flex items-center gap-3">
@@ -187,7 +195,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
               className="flex items-center gap-2 rounded-lg bg-[#00e599] px-4 py-2 text-xs font-bold uppercase tracking-wider text-black hover:bg-[#00ffaa] transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span>Retry Now</span>
+              <span>Retry Generation</span>
             </button>
           )}
           {onDismissError && (
