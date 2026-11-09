@@ -1,5 +1,5 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
-import { runGeminiDiagnostic } from './utils/gemini';
+import { runHfDiagnostic } from './utils/huggingface';
 
 const defaultHeaders: Record<string, string> = {
   'Content-Type': 'application/json',
@@ -18,23 +18,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
   }
 
   try {
-    const diagnostic = await runGeminiDiagnostic();
-
-    // Map diagnostic result to HTTP status code:
-    // If the diagnostic succeeded, return 200.
-    // If credentials are missing or unauthenticated, return 401.
-    // If quota is exhausted, return 429.
-    // Otherwise return diagnostic status code or 500.
-    let responseStatus = 200;
-    if (!diagnostic.success) {
-      if (!diagnostic.hasApiKey || diagnostic.statusCode === 401) {
-        responseStatus = 401;
-      } else if (diagnostic.statusCode === 429) {
-        responseStatus = 429;
-      } else {
-        responseStatus = diagnostic.statusCode >= 400 && diagnostic.statusCode < 600 ? diagnostic.statusCode : 500;
-      }
-    }
+    const diagnostic = await runHfDiagnostic();
+    const responseStatus = diagnostic.statusCode || (diagnostic.success ? 200 : 503);
 
     return {
       statusCode: responseStatus,

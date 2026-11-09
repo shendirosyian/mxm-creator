@@ -5,6 +5,10 @@
 export interface GenerationJob {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
+  stage?: string;
+  queuePosition?: number;
+  queueMessage?: string;
+  progress?: number;
   createdAt: number;
   updatedAt: number;
   result?: {

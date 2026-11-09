@@ -37,17 +37,21 @@ export const handler: Handler = async (event: HandlerEvent) => {
     };
   }
 
-  return {
-    statusCode: 200,
-    headers: defaultHeaders,
-    body: JSON.stringify({
-      jobId: job.id,
-      status: job.status,
-      result: job.result,
-      error: job.error,
-      isQuotaExhausted: job.isQuotaExhausted,
-      requiresCredentials: job.requiresCredentials,
-      updatedAt: job.updatedAt,
-    }),
-  };
+    return {
+      statusCode: 200,
+      headers: defaultHeaders,
+      body: JSON.stringify({
+        jobId: job.id,
+        status: job.status,
+        stage: job.stage,
+        queuePosition: job.queuePosition,
+        queueMessage: job.queueMessage,
+        progress: job.progress,
+        result: job.result,
+        error: job.error,
+        isQuotaExhausted: job.isQuotaExhausted,
+        requiresCredentials: job.requiresCredentials,
+        updatedAt: job.updatedAt,
+      }),
+    };
 };

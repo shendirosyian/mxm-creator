@@ -1,5 +1,5 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
-import { runGeminiStyling } from './utils/gemini';
+import { runVirtualTryOn } from './utils/huggingface';
 import { createJob, updateJob } from './utils/jobs';
 
 const defaultHeaders: Record<string, string> = {
@@ -35,7 +35,6 @@ export const handler: Handler = async (event: HandlerEvent) => {
       customization = {},
       mode = 'REALISTIC',
       aspectRatio = '3:4',
-      variationsCount = 1,
     } = payload;
 
     if (!player || !player.data) {
@@ -49,120 +48,97 @@ export const handler: Handler = async (event: HandlerEvent) => {
     const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     createJob(jobId);
 
-    // Build prompt instructions
-    const garmentDescriptions: string[] = [];
+    // Extract staged garment assets
     const garmentList: Array<{ slot: string; dataUrl: string; name?: string }> = [];
 
     if (garments && typeof garments === 'object') {
       for (const [slotKey, garment] of Object.entries(garments as Record<string, any>)) {
         if (garment && garment.data) {
-          const slotLabel = slotKey.toUpperCase();
-          garmentDescriptions.push(
-            `Adapt the ${slotLabel} (${garment.name || 'reference clothing'}) naturally onto the model, preserving its fabric drape, silhouette, and visible details.`
-          );
           garmentList.push({ slot: slotKey, dataUrl: garment.data, name: garment.name });
         }
       }
     }
 
-    const colorInstructions: string[] = [];
-    if (customization.colors?.shirt) colorInstructions.push(`Shirt color: ${customization.colors.shirt}`);
-    if (customization.colors?.pants) colorInstructions.push(`Pants color: ${customization.colors.pants}`);
-    if (customization.colors?.shoes) colorInstructions.push(`Shoes color: ${customization.colors.shoes}`);
-    if (customization.colors?.accessories) colorInstructions.push(`Accessories color: ${customization.colors.accessories}`);
-
-    let styleAtmosphere = 'Authentic commercial realism, natural skin texture, realistic cloth wrinkles and draping.';
-    if (mode === 'STUDIO') {
-      styleAtmosphere = 'Editorial studio fashion photography, controlled softbox lighting, clean studio background, crisp focus.';
-    } else if (mode === 'CREATIVE') {
-      styleAtmosphere = 'Contemporary creative high-fashion aesthetic, rich tonal contrast, expressive styling.';
+    if (garmentList.length === 0) {
+      return {
+        statusCode: 400,
+        headers: defaultHeaders,
+        body: JSON.stringify({
+          error: 'Please upload at least one garment image (Shirt/Top prioritized for virtual try-on).',
+        }),
+      };
     }
 
+    // Determine garment description text for the pipeline
+    // Priority: user custom prompt > specific top garment name > fallback generic description
     const customPrompt = customization.customPrompt?.trim();
-    const faceText = customization.faceExpression && customization.faceExpression !== 'Original'
-      ? `Facial expression: ${customization.faceExpression}. Maintain recognizable facial characteristics as much as the model allows.`
-      : 'Maintain the recognizable facial identity and expression of the model.';
+    const topGarment = garmentList.find((g) => g.slot === 'shirt') || garmentList[0];
+    const garmentDescription = customPrompt || topGarment.name || 'Short Sleeve Round Neck T-shirt, natural fit';
 
-    const hairText = customization.hairStyle && customization.hairStyle !== 'Original'
-      ? `Hairstyle: ${customization.hairStyle}${customization.hairColor ? ` in ${customization.hairColor}` : ''}.`
-      : 'Preserve original natural hairstyle and hair color.';
+    updateJob(jobId, {
+      status: 'processing',
+      stage: 'Connecting to Hugging Face ZeroGPU Space...',
+    });
 
-    const poseText = customization.pose && customization.pose !== 'Original'
-      ? `Subject pose: ${customization.pose}.`
-      : 'Preserve the natural posture of the model.';
+    // Execute genuine Virtual Try-On via Hugging Face Space (Nymbo/Virtual-Try-On)
+    const tryOnResult = await runVirtualTryOn({
+      playerBase64: player.data,
+      garmentList,
+      garmentDescription,
+      onProgress: (info) => {
+        updateJob(jobId, {
+          status: 'processing',
+          stage: info.stage,
+          queuePosition: info.position,
+          queueMessage: info.message,
+          progress: info.progress,
+        });
+      },
+    });
 
-    const prompt = `
-VIRTUAL STYLING TASK:
-Reference 1 is the primary identity source. Preserve the person's identity, facial features, and original appearance as much as possible.
-${garmentDescriptions.length > 0 ? garmentDescriptions.join(' ') : 'Fit the specified stylish outfit naturally onto the person.'}
-Style Atmosphere: ${styleAtmosphere}
-${faceText}
-${hairText}
-${poseText}
-${colorInstructions.length > 0 ? `Color overrides: ${colorInstructions.join(', ')}.` : ''}
-${customPrompt ? `Directive: ${customPrompt}` : ''}
-Isolate subject cleanly against a uniform flat neutral studio background suitable for transparent alpha cutout.
-`.trim();
-
-    const count = Math.min(Math.max(variationsCount || 1, 1), 4);
-    const results: Array<{ imageUrl: string; index: number; label: string }> = [];
-
-    // Run Google Gemini API Image Generation
-    for (let i = 0; i < count; i++) {
-      const variationPrompt = i === 0
-        ? prompt
-        : `${prompt}\nVariation ${i + 1}: Subtle alternative cloth styling and angle nuance while maintaining subject identity.`;
-
-      const geminiResult = await runGeminiStyling({
-        prompt: variationPrompt,
-        playerBase64: player.data,
-        garmentList,
-        aspectRatio,
+    if (!tryOnResult.success) {
+      updateJob(jobId, {
+        status: 'failed',
+        error: tryOnResult.error,
+        isQuotaExhausted: tryOnResult.isQuotaExhausted,
+        requiresCredentials: tryOnResult.requiresCredentials,
       });
 
-      if (!geminiResult.success) {
-        updateJob(jobId, {
-          status: 'failed',
-          error: geminiResult.error,
-          isQuotaExhausted: geminiResult.isQuotaExhausted,
-          requiresCredentials: geminiResult.requiresCredentials,
-        });
-
-        const statusCode = geminiResult.isQuotaExhausted ? 429 : geminiResult.requiresCredentials ? 401 : 500;
-        return {
-          statusCode,
-          headers: defaultHeaders,
-          body: JSON.stringify({
-            error: geminiResult.error,
-            isQuotaExhausted: geminiResult.isQuotaExhausted,
-            requiresCredentials: geminiResult.requiresCredentials,
-            modelUsed: geminiResult.modelUsed,
-            jobId,
-          }),
-        };
-      }
-
-      if (geminiResult.imageDataUrl) {
-        results.push({
-          imageUrl: geminiResult.imageDataUrl,
-          index: i,
-          label: i === 0 ? 'Primary Look' : `Variation 0${i + 1}`,
-        });
-      }
+      const statusCode = tryOnResult.isQuotaExhausted ? 429 : 500;
+      return {
+        statusCode,
+        headers: defaultHeaders,
+        body: JSON.stringify({
+          error: tryOnResult.error,
+          isQuotaExhausted: tryOnResult.isQuotaExhausted,
+          requiresCredentials: tryOnResult.requiresCredentials,
+          spaceUsed: tryOnResult.spaceUsed,
+          jobId,
+        }),
+      };
     }
 
-    if (results.length === 0) {
-      updateJob(jobId, { status: 'failed', error: 'No image data returned by Gemini API.' });
+    if (!tryOnResult.imageDataUrl) {
+      updateJob(jobId, { status: 'failed', error: 'No try-on image returned from ZeroGPU space.' });
       return {
         statusCode: 500,
         headers: defaultHeaders,
-        body: JSON.stringify({ error: 'No image was returned by the AI provider.', jobId }),
+        body: JSON.stringify({ error: 'No image was returned by Hugging Face ZeroGPU.', jobId }),
       };
     }
+
+    const results = [
+      {
+        imageUrl: tryOnResult.imageDataUrl,
+        index: 0,
+        label: 'Virtual Try-On Look',
+      },
+    ];
 
     const jobResult = {
       images: results,
       primaryImage: results[0].imageUrl,
+      maskedImage: tryOnResult.maskedImageDataUrl,
       mode,
       aspectRatio,
     };
@@ -186,7 +162,7 @@ Isolate subject cleanly against a uniform flat neutral studio background suitabl
     return {
       statusCode: 500,
       headers: defaultHeaders,
-      body: JSON.stringify({ error: err?.message || 'Server error during look generation.' }),
+      body: JSON.stringify({ error: err?.message || 'Server error during virtual try-on processing.' }),
     };
   }
 };

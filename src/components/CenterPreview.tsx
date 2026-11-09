@@ -70,13 +70,13 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
   const handleRunDiagnostic = async () => {
     setDiagnosticResult({ loading: true });
     try {
-      const res = await fetch('/.netlify/functions/gemini-diagnostic');
+      const res = await fetch('/.netlify/functions/hf-diagnostic');
       const data = await res.json();
       setDiagnosticResult({ loading: false, data });
     } catch (err: any) {
       setDiagnosticResult({
         loading: false,
-        error: err?.message || 'Failed to connect to diagnostic endpoint.',
+        error: err?.message || 'Failed to connect to Hugging Face diagnostic endpoint.',
       });
     }
   };
@@ -117,7 +117,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
     ? shadowImage
     : transparentImage || generatedImage;
 
-  // External Service Configuration Setup State (Gemini API Key Required)
+  // External Service Configuration Setup State
   if (requiresCredentials && !generatedImage) {
     return (
       <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-xl border border-amber-500/30 bg-[#0e1012] p-8 text-center">
@@ -125,33 +125,33 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           <Layers className="h-8 w-8 text-amber-400" />
         </div>
         <h2 className="text-base font-bold text-white uppercase tracking-wider">
-          Gemini API Key Required
+          Hugging Face ZeroGPU Space Access
         </h2>
         <p className="mt-2 max-w-md text-xs text-neutral-300 leading-relaxed">
-          MXM CREATOR connects to the Google Gemini API (<span className="font-mono text-neutral-200">gemini-3.1-flash-lite-image</span>) via Netlify Functions.
+          MXM CREATOR connects to Hugging Face ZeroGPU (<span className="font-mono text-neutral-200">Nymbo/Virtual-Try-On</span>) via Netlify Functions.
         </p>
 
         <div className="mt-5 w-full max-w-md rounded-lg border border-white/[0.08] bg-[#14171a] p-4 text-left text-xs text-neutral-300 space-y-2.5">
           <p className="font-semibold text-white uppercase text-[11px] tracking-wider">
-            Configure Environment Variables:
+            Environment Setup (Optional for higher quota):
           </p>
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">1</span>
             <div>
-              <span className="font-mono text-[#00e599] text-[11px]">GEMINI_API_KEY</span>
-              <p className="text-[10px] text-neutral-400">Set in Netlify site settings (Site configuration &gt; Environment variables) or in AI Studio Secrets.</p>
+              <span className="font-mono text-[#00e599] text-[11px]">HF_TOKEN</span>
+              <p className="text-[10px] text-neutral-400">Optional user access token in Netlify site settings (Site configuration &gt; Environment variables).</p>
             </div>
           </div>
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">2</span>
             <div>
-              <span className="font-mono text-neutral-300 text-[11px]">GEMINI_IMAGE_MODEL (Optional)</span>
-              <p className="text-[10px] text-neutral-400">Default: <span className="font-mono text-neutral-200">gemini-3.1-flash-lite-image</span>.</p>
+              <span className="font-mono text-neutral-300 text-[11px]">HF_SPACE_ID</span>
+              <p className="text-[10px] text-neutral-400">Default: <span className="font-mono text-neutral-200">Nymbo/Virtual-Try-On</span>.</p>
             </div>
           </div>
           <div className="flex items-start gap-2.5">
             <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-white/10 font-mono text-[10px] text-white">3</span>
-            <p className="text-[11px]">Click <strong className="text-[#00e599]">Retry Generation</strong> once your key is configured.</p>
+            <p className="text-[11px]">Click <strong className="text-[#00e599]">Retry Generation</strong> to try again.</p>
           </div>
         </div>
 
@@ -169,20 +169,20 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
             {diagnosticResult.loading ? (
               <div className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4 animate-spin text-[#00e599]" />
-                <span>Testing native Gemini API connection (x-goog-api-key)...</span>
+                <span>Checking ZeroGPU Space connection...</span>
               </div>
             ) : (
               <div className="space-y-1">
                 <div className="flex items-center justify-between font-mono text-[11px] font-semibold">
-                  <span>Status: HTTP {diagnosticResult.data?.statusCode || (diagnosticResult.error ? 'Error' : 500)}</span>
-                  <span>Method: x-goog-api-key</span>
+                  <span>Status: {diagnosticResult.data?.spaceStatus || (diagnosticResult.error ? 'Error' : '500')}</span>
+                  <span>Hardware: {diagnosticResult.data?.hardware || 'zero-a10g'}</span>
                 </div>
                 <p className="text-[11px] leading-relaxed">
                   {diagnosticResult.data?.sanitizedMessage || diagnosticResult.error}
                 </p>
-                {diagnosticResult.data?.maskedKey && (
+                {diagnosticResult.data?.spaceId && (
                   <p className="font-mono text-[10px] text-neutral-400">
-                    Key: {diagnosticResult.data.maskedKey}
+                    Space: {diagnosticResult.data.spaceId}
                   </p>
                 )}
               </div>
@@ -198,7 +198,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
               className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#181b1f] px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 transition-colors"
             >
               <Sparkles className="h-3 w-3 text-[#00e599]" />
-              <span>API Settings</span>
+              <span>Space Settings</span>
             </button>
           )}
           {onRetry && (
@@ -226,7 +226,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
     );
   }
 
-  // Quota Exhaustion Notice State
+  // ZeroGPU Quota Exhaustion Notice State
   if (isQuotaError && !generatedImage) {
     return (
       <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-xl border border-amber-500/30 bg-[#0e1012] p-8 text-center">
@@ -234,22 +234,21 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
           <Layers className="h-8 w-8 text-amber-400" />
         </div>
         <h2 className="text-base font-bold text-white uppercase tracking-wider">
-          Gemini Free Quota Limit Reached
+          Hugging Face ZeroGPU Limit Reached
         </h2>
         <p className="mt-2 max-w-md text-xs text-neutral-300 leading-relaxed">
-          {setupErrorMessage || 'Google Gemini Free Tier request quota reached for the selected image model. Per the cost-safety policy, paid services are never automatically activated.'}
+          {setupErrorMessage || 'The ZeroGPU quota for Nymbo/Virtual-Try-On has temporarily been reached. ZeroGPU quotas automatically replenish after a short cooling period.'}
         </p>
 
         <p className="mt-3 text-[11px] text-neutral-400 max-w-md">
-          Gemini Free Tier quotas reset daily. Please wait for the quota window to reset, or check your rate limits at{' '}
-          <a
-            href="https://aistudio.google.com/docs/rate-limits"
-            target="_blank"
-            rel="noreferrer"
-            className="text-[#00e599] underline hover:text-[#00ffaa]"
+          To bypass public queue limits, you can add your free personal Hugging Face user access token via <span className="font-mono text-white">HF_TOKEN</span> in Netlify environment variables or test the connection in{' '}
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            className="text-[#00e599] underline hover:text-[#00ffaa] ml-1 inline-block"
           >
-            aistudio.google.com/docs/rate-limits
-          </a>.
+            API Settings
+          </button>.
         </p>
 
         <div className="mt-6 flex items-center gap-3">
@@ -261,7 +260,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
               className="flex items-center gap-2 rounded-lg bg-[#00e599] px-4 py-2 text-xs font-bold uppercase tracking-wider text-black hover:bg-[#00ffaa] transition-colors"
             >
               <Sparkles className="h-3.5 w-3.5" />
-              <span>Retry Generation</span>
+              <span>Retry Try-On</span>
             </button>
           )}
           {onDismissError && (

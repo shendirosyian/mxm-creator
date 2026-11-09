@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
   X,
-  Sparkles,
   CheckCircle2,
   AlertTriangle,
   XCircle,
@@ -19,30 +18,25 @@ interface ApiSettingsModalProps {
   onClose: () => void;
 }
 
-export interface DiagnosticData {
+export interface HfDiagnosticData {
   success: boolean;
-  hasApiKey: boolean;
-  maskedKey: string;
+  spaceId: string;
+  hardware: string;
+  hasHfToken: boolean;
+  maskedToken: string;
   statusCode: number;
   statusText: string;
-  authMethod: string;
-  endpointTested: string;
-  modelTested: string;
   sanitizedMessage: string;
+  spaceStatus: string;
+  endpointTested: string;
   timestamp?: string;
-  conflictingEnv?: {
-    hasGoogleApiKey: boolean;
-    hasGoogleGenAiUseVertexAi: boolean;
-    hasGoogleAppCredentials: boolean;
-    hasAnyConflict: boolean;
-  };
 }
 
 export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onClose }) => {
   const [isTesting, setIsTesting] = useState(false);
-  const [diagnostic, setDiagnostic] = useState<DiagnosticData | null>(null);
-  const [modelName, setModelName] = useState<string>(() => {
-    return localStorage.getItem('mxm_gemini_image_model') || 'gemini-3.1-flash-lite-image';
+  const [diagnostic, setDiagnostic] = useState<HfDiagnosticData | null>(null);
+  const [spaceId, setSpaceId] = useState<string>(() => {
+    return localStorage.getItem('mxm_hf_space_id') || 'Nymbo/Virtual-Try-On';
   });
   const [isSaved, setIsSaved] = useState(false);
 
@@ -66,20 +60,21 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
     setIsTesting(true);
     setIsSaved(false);
     try {
-      const res = await fetch('/.netlify/functions/gemini-diagnostic');
-      const data: DiagnosticData = await res.json();
+      const res = await fetch('/.netlify/functions/hf-diagnostic');
+      const data: HfDiagnosticData = await res.json();
       setDiagnostic(data);
     } catch (err: any) {
       setDiagnostic({
         success: false,
-        hasApiKey: false,
-        maskedKey: 'UNKNOWN',
+        spaceId: 'Nymbo/Virtual-Try-On',
+        hardware: 'zero-a10g',
+        hasHfToken: false,
+        maskedToken: 'NONE',
         statusCode: 500,
         statusText: 'Diagnostic Failed',
-        authMethod: 'x-goog-api-key',
-        endpointTested: 'https://generativelanguage.googleapis.com',
-        modelTested: 'gemini-3.8-flash',
-        sanitizedMessage: err?.message || 'Could not connect to Netlify diagnostic endpoint.',
+        sanitizedMessage: err?.message || 'Could not connect to Hugging Face diagnostic endpoint.',
+        spaceStatus: 'ERROR',
+        endpointTested: 'https://huggingface.co/spaces/Nymbo/Virtual-Try-On',
       });
     } finally {
       setIsTesting(false);
@@ -87,7 +82,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
   };
 
   const handleSaveSettings = () => {
-    localStorage.setItem('mxm_gemini_image_model', modelName.trim());
+    localStorage.setItem('mxm_hf_space_id', spaceId.trim());
     setIsSaved(true);
     setTimeout(() => setIsSaved(false), 2500);
   };
@@ -112,10 +107,10 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
             </span>
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                Gemini API Connection & Settings
+                Hugging Face ZeroGPU Try-On Settings
               </h2>
               <p className="text-[11px] text-neutral-400">
-                Official Google Generative Language Developer API
+                Gradio API proxy via Netlify Functions · Nymbo/Virtual-Try-On
               </p>
             </div>
           </div>
@@ -134,7 +129,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Connection Status
+                Space Status
               </span>
               {diagnostic && (
                 <span
@@ -148,15 +143,15 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                 >
                   {diagnostic.success ? (
                     <>
-                      <CheckCircle2 className="h-3 w-3" /> Connected
+                      <CheckCircle2 className="h-3 w-3" /> Ready · {diagnostic.spaceStatus}
                     </>
                   ) : diagnostic.statusCode === 429 ? (
                     <>
-                      <AlertTriangle className="h-3 w-3" /> Quota Reached
+                      <AlertTriangle className="h-3 w-3" /> ZeroGPU Quota Reached
                     </>
                   ) : (
                     <>
-                      <XCircle className="h-3 w-3" /> HTTP {diagnostic.statusCode}
+                      <XCircle className="h-3 w-3" /> Status: {diagnostic.statusCode}
                     </>
                   )}
                 </span>
@@ -167,18 +162,18 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
                 <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                  Auth Method
+                  ZeroGPU Hardware
                 </span>
                 <span className="font-mono text-[11px] text-[#00e599] font-medium">
-                  x-goog-api-key
+                  {diagnostic ? diagnostic.hardware : 'zero-a10g'}
                 </span>
               </div>
               <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
                 <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                  Server Key Status
+                  HF Token (Netlify)
                 </span>
                 <span className="font-mono text-[11px] text-neutral-200">
-                  {diagnostic ? diagnostic.maskedKey : 'Checking...'}
+                  {diagnostic ? (diagnostic.hasHfToken ? diagnostic.maskedToken : 'Optional (Public)') : 'Checking...'}
                 </span>
               </div>
             </div>
@@ -209,9 +204,9 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                       {diagnostic.sanitizedMessage}
                     </p>
                     <div className="flex items-center gap-2 font-mono text-[10px] text-neutral-400">
-                      <span>HTTP Status: {diagnostic.statusCode}</span>
+                      <span>Space: {diagnostic.spaceId}</span>
                       <span>·</span>
-                      <span>Target: {diagnostic.modelTested}</span>
+                      <span>Status: {diagnostic.spaceStatus}</span>
                     </div>
                   </div>
                 </div>
@@ -227,74 +222,33 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                 className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#20252b] py-2 text-xs font-semibold text-white hover:bg-[#282e36] hover:border-white/20 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 text-[#00e599] ${isTesting ? 'animate-spin' : ''}`} />
-                <span>{isTesting ? 'Testing Native Gemini Connection...' : 'TEST CONNECTION'}</span>
+                <span>{isTesting ? 'Checking Hugging Face ZeroGPU Space...' : 'TEST SPACE CONNECTION'}</span>
               </button>
             </div>
           </div>
 
-          {/* Environment Conflict Audit */}
-          <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-3 text-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase font-semibold text-neutral-400 tracking-wider">
-                Environment Conflict Audit
-              </span>
-              <span
-                className={`text-[10px] font-mono px-2 py-0.5 rounded ${
-                  diagnostic?.conflictingEnv?.hasAnyConflict
-                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
-                    : 'bg-[#00e599]/10 text-[#00e599] border border-[#00e599]/30'
-                }`}
-              >
-                {diagnostic?.conflictingEnv?.hasAnyConflict ? 'Conflicting Env Detected' : 'No Conflicting Vars'}
-              </span>
-            </div>
-            <div className="grid grid-cols-3 gap-2 font-mono text-[10px]">
-              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
-                <span className="text-neutral-400 block truncate">GOOGLE_API_KEY</span>
-                <span className={diagnostic?.conflictingEnv?.hasGoogleApiKey ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
-                  {diagnostic?.conflictingEnv?.hasGoogleApiKey ? 'Present (Ignored)' : 'None'}
-                </span>
-              </div>
-              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
-                <span className="text-neutral-400 block truncate">USE_VERTEXAI</span>
-                <span className={diagnostic?.conflictingEnv?.hasGoogleGenAiUseVertexAi ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
-                  {diagnostic?.conflictingEnv?.hasGoogleGenAiUseVertexAi ? 'Present (Ignored)' : 'None'}
-                </span>
-              </div>
-              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
-                <span className="text-neutral-400 block truncate">APP_CREDENTIALS</span>
-                <span className={diagnostic?.conflictingEnv?.hasGoogleAppCredentials ? 'text-amber-400 font-semibold' : 'text-neutral-500'}>
-                  {diagnostic?.conflictingEnv?.hasGoogleAppCredentials ? 'Present (Ignored)' : 'None'}
-                </span>
-              </div>
-            </div>
-            <p className="text-[10px] text-neutral-400 leading-relaxed">
-              Native authentication strictly uses <span className="text-white font-mono">GEMINI_API_KEY</span>. Any conflicting variables are safely ignored and values are never exposed.
-            </p>
-          </div>
-
-          {/* Card 2: Image Model Configuration */}
+          {/* Card 2: Space Configuration */}
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
                 <Cpu className="h-3.5 w-3.5 text-neutral-400" />
-                <span>Active Image Model</span>
+                <span>Target Hugging Face Space</span>
               </span>
               <span className="font-mono text-[10px] text-[#00e599] bg-[#00e599]/10 px-2 py-0.5 rounded border border-[#00e599]/30">
-                Free Tier Default
+                zero-a10g
               </span>
             </div>
 
             <div>
               <input
                 type="text"
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                placeholder="gemini-3.1-flash-lite-image"
+                value={spaceId}
+                onChange={(e) => setSpaceId(e.target.value)}
+                placeholder="Nymbo/Virtual-Try-On"
                 className="w-full rounded-lg border border-white/10 bg-[#121417] px-3 py-2 font-mono text-xs text-white placeholder-neutral-500 focus:border-[#00e599] focus:outline-hidden"
               />
               <p className="mt-1.5 text-[10px] text-neutral-400 leading-relaxed">
-                Standard image generation & virtual styling uses <span className="font-mono text-neutral-200">gemini-3.1-flash-lite-image</span>. Can also be overridden in Netlify via <span className="font-mono text-neutral-200">GEMINI_IMAGE_MODEL</span>.
+                Default candidate: <span className="font-mono text-neutral-200">Nymbo/Virtual-Try-On</span>. Server proxy connects securely via <span className="font-mono text-neutral-200">@gradio/client</span> to the <span className="font-mono text-[#00e599]">/tryon</span> endpoint.
               </p>
             </div>
 
@@ -313,23 +267,32 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
             </div>
           </div>
 
-          {/* Card 3: Security & Netlify Environment Notice */}
+          {/* Card 3: Security & Netlify Token Instructions */}
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-3 text-[11px] text-neutral-300 space-y-1.5">
             <div className="flex items-center gap-2 text-white font-medium text-xs">
               <ShieldCheck className="h-4 w-4 text-[#00e599]" />
-              <span>Zero Browser API Key Exposure</span>
+              <span>Secure Server-Side Architecture</span>
             </div>
             <p className="text-[10px] text-neutral-400 leading-relaxed">
-              Your API key is never exposed or requested in the frontend browser. Set <span className="font-mono text-white">GEMINI_API_KEY</span> in your Netlify site settings (<strong className="text-neutral-200">Site configuration &gt; Environment variables</strong>) or AI Studio Secrets.
+              Hugging Face API requests are proxied securely through Netlify Functions. To increase ZeroGPU quota limits or use your own Hugging Face tier, set <span className="font-mono text-white">HF_TOKEN</span> in Netlify environment variables (<strong className="text-neutral-200">Site configuration &gt; Environment variables</strong>).
             </p>
-            <div className="pt-1">
+            <div className="pt-1 flex items-center justify-between">
               <a
-                href="https://aistudio.google.com/app/apikey"
+                href="https://huggingface.co/spaces/Nymbo/Virtual-Try-On"
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-[10px] text-[#00e599] hover:underline"
               >
-                <span>Get Google AI Studio API Key</span>
+                <span>View Nymbo/Virtual-Try-On Space</span>
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+              <a
+                href="https://huggingface.co/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[10px] text-neutral-400 hover:text-white hover:underline"
+              >
+                <span>HF Access Tokens</span>
                 <ExternalLink className="h-2.5 w-2.5" />
               </a>
             </div>
