@@ -15,13 +15,43 @@ interface SlotConfig {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   hint: string;
+  isSupportedNow: boolean;
+  statusBadge: string;
 }
 
 const SLOTS: SlotConfig[] = [
-  { id: 'top', label: 'Top / Shirt', icon: Shirt, hint: 'Tee, jacket, shirt, hoodie' },
-  { id: 'pants', label: 'Pants / Bottom', icon: Layers, hint: 'Jeans, trousers, cargo, shorts' },
-  { id: 'shoes', label: 'Shoes / Footwear', icon: Footprints, hint: 'Sneakers, boots, loafers' },
-  { id: 'accessories', label: 'Accessories', icon: Watch, hint: 'Cap, watch, eyewear, bag' },
+  {
+    id: 'top',
+    label: 'Top / Shirt',
+    icon: Shirt,
+    hint: 'Tee, jacket, shirt, hoodie',
+    isSupportedNow: true,
+    statusBadge: 'Active Try-On',
+  },
+  {
+    id: 'pants',
+    label: 'Pants / Bottom',
+    icon: Layers,
+    hint: 'Jeans, cargo, trousers (Staged reference)',
+    isSupportedNow: false,
+    statusBadge: 'Staged Reference',
+  },
+  {
+    id: 'shoes',
+    label: 'Shoes / Footwear',
+    icon: Footprints,
+    hint: 'Sneakers, boots (Preserved anatomy)',
+    isSupportedNow: false,
+    statusBadge: 'Staged Reference',
+  },
+  {
+    id: 'accessories',
+    label: 'Accessories',
+    icon: Watch,
+    hint: 'Cap, watch, eyewear (Preserved)',
+    isSupportedNow: false,
+    statusBadge: 'Staged Reference',
+  },
 ];
 
 export const OutfitUpload: React.FC<OutfitUploadProps> = ({
@@ -132,10 +162,21 @@ export const OutfitUpload: React.FC<OutfitUploadProps> = ({
               />
 
               <div className="mb-2 flex items-center justify-between">
-                <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
+                <div className="flex items-center gap-1.5">
                   <Icon className="h-3.5 w-3.5 text-neutral-400" />
-                  <span>{slot.label.split('/')[0]}</span>
-                </span>
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300">
+                    {slot.label.split('/')[0]}
+                  </span>
+                  <span
+                    className={`font-mono text-[9px] px-1 py-0.2 rounded border ${
+                      slot.isSupportedNow
+                        ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                        : 'border-white/10 bg-white/5 text-neutral-400'
+                    }`}
+                  >
+                    {slot.statusBadge}
+                  </span>
+                </div>
 
                 {current && (
                   <div className="flex items-center gap-1">
