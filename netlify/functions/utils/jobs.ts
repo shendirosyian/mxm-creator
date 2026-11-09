@@ -16,6 +16,8 @@ export interface GenerationJob {
     primaryImage: string;
     mode?: string;
     aspectRatio?: string;
+    warnings?: string[];
+    garmentStatus?: Record<string, { applied: boolean; note: string }>;
   };
   error?: string;
   isQuotaExhausted?: boolean;

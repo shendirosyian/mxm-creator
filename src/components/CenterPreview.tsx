@@ -23,6 +23,9 @@ interface CenterPreviewProps {
   activeVariationIndex: number;
   onSelectVariation: (idx: number) => void;
   isGenerating: boolean;
+  generatingStage?: string;
+  pipelineWarnings?: string[];
+  garmentStatusMap?: Record<string, { applied: boolean; note: string }>;
   onOpenExport: () => void;
   onOpenBrushTool?: () => void;
   hasMask?: boolean;
@@ -46,6 +49,9 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
   activeVariationIndex,
   onSelectVariation,
   isGenerating,
+  generatingStage,
+  pipelineWarnings = [],
+  garmentStatusMap = {},
   onOpenExport,
   onOpenBrushTool,
   hasMask = false,
@@ -484,18 +490,22 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
             : 'bg-[#0b0d0e]'
         }`}
       >
-        {/* Loading Overlay */}
+        {/* Loading Overlay with multi-stage progress */}
         {isGenerating && (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/75 backdrop-blur-xs">
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/80 backdrop-blur-xs px-6 text-center">
             <div className="relative mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-white/20 bg-[#16181a]">
               <Sparkles className="h-6 w-6 animate-spin text-[#00e599]" />
             </div>
             <p className="text-sm font-bold uppercase tracking-wider text-white">
-              Transforming Character & Fitting Garments
+              {generatingStage || 'Processing Neural Virtual Try-On...'}
             </p>
-            <p className="mt-1 font-mono text-xs text-[#00e599]">
-              Reconstructing fabric draping · Preserving facial identity
+            <p className="mt-1.5 font-mono text-xs text-[#00e599]">
+              Preserving original body proportions · Locking height-to-width ratio & facial identity
             </p>
+            <div className="mt-4 flex items-center gap-2 text-[11px] text-neutral-400">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#00e599] animate-pulse" />
+              <span>ZeroGPU Neural Pipeline</span>
+            </div>
           </div>
         )}
 
@@ -505,7 +515,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
             className="relative mx-auto flex items-center justify-center transition-transform duration-150"
             style={{ transform: `scale(${zoomLevel})` }}
           >
-            <div className="relative max-h-[72vh] max-w-full overflow-hidden rounded-lg border border-white/10 shadow-2xl">
+            <div className="relative max-h-[72vh] max-w-full overflow-hidden rounded-lg border border-white/10 shadow-2xl flex items-center justify-center bg-black">
               {/* After: Generated Look */}
               <img
                 src={generatedImage}
@@ -513,22 +523,22 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className="block max-h-[72vh] w-auto max-w-full object-contain pointer-events-none"
               />
 
-              {/* Before: Original Player (Clipped by slider percentage) */}
+              {/* Before: Original Player (Clipped by slider percentage - object-contain preserves 100% natural proportions) */}
               <div
-                className="absolute inset-0 overflow-hidden"
+                className="absolute inset-0 overflow-hidden flex items-center justify-center"
                 style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
               >
                 <img
                   src={playerAsset.dataUrl}
                   alt="Original player reference"
-                  className="block h-full w-full object-cover pointer-events-none"
+                  className="block max-h-[72vh] w-auto max-w-full object-contain pointer-events-none"
                 />
-                <span className="absolute left-3 top-3 rounded bg-black/60 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-neutral-300 backdrop-blur-xs">
+                <span className="absolute left-3 top-3 rounded bg-black/70 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-neutral-200 backdrop-blur-xs border border-white/10">
                   Original
                 </span>
               </div>
 
-              <span className="absolute right-3 top-3 rounded bg-black/60 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-[#00e599] backdrop-blur-xs">
+              <span className="absolute right-3 top-3 rounded bg-black/70 px-2 py-0.5 text-[10px] font-mono uppercase tracking-wider text-[#00e599] backdrop-blur-xs border border-[#00e599]/30">
                 Transformed
               </span>
 
@@ -597,7 +607,39 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
             </div>
           </div>
         )}
-      </div>
+      {/* Quality Control & Garment Replacement Status Strip */}
+      {generatedImage && (Object.keys(garmentStatusMap).length > 0 || pipelineWarnings.length > 0) && (
+        <div className="border-t border-white/[0.06] bg-[#121417] px-4 py-2 text-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] uppercase font-semibold text-neutral-400 tracking-wider mr-1">
+                Outfit Status:
+              </span>
+              {Object.entries(garmentStatusMap).map(([slot, stat]) => (
+                <span
+                  key={slot}
+                  className={`inline-flex items-center gap-1 rounded-sm px-2 py-0.5 font-mono text-[10px] border ${
+                    stat.applied
+                      ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                      : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                  }`}
+                  title={stat.note}
+                >
+                  <span className="uppercase font-bold">{slot}</span>
+                  <span>{stat.applied ? '✓ Applied' : 'Preserved'}</span>
+                </span>
+              ))}
+            </div>
+
+            {pipelineWarnings.length > 0 && (
+              <div className="flex items-center gap-1 text-[11px] text-amber-400 font-medium">
+                <span className="text-[10px]">ℹ</span>
+                <span className="line-clamp-1">{pipelineWarnings[0]}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Bottom Variations Strip (Multiple Looks) */}
       {variations.length > 1 && (

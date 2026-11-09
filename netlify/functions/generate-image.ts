@@ -141,6 +141,8 @@ export const handler: Handler = async (event: HandlerEvent) => {
       maskedImage: tryOnResult.maskedImageDataUrl,
       mode,
       aspectRatio,
+      warnings: tryOnResult.warnings,
+      garmentStatus: tryOnResult.garmentStatus,
     };
 
     updateJob(jobId, {

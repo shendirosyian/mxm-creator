@@ -58,8 +58,11 @@ export default function App() {
   const [variations, setVariations] = useState<LookVariation[]>([]);
   const [activeVariationIndex, setActiveVariationIndex] = useState<number>(0);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
+  const [generatingStage, setGeneratingStage] = useState<string>('Preparing virtual try-on...');
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
+  const [pipelineWarnings, setPipelineWarnings] = useState<string[]>([]);
+  const [garmentStatusMap, setGarmentStatusMap] = useState<Record<string, { applied: boolean; note: string }>>({});
   const [isQuotaError, setIsQuotaError] = useState<boolean>(false);
   const [requiresCredentials, setRequiresCredentials] = useState<boolean>(false);
 
@@ -200,7 +203,10 @@ export default function App() {
     if (!canGenerate || !playerAsset || isGenerating) return;
 
     setIsGenerating(true);
+    setGeneratingStage('Stage 1/5: Locking body proportions & preparing canvas...');
     setErrorNotice(null);
+    setPipelineWarnings([]);
+    setGarmentStatusMap({});
     setIsQuotaError(false);
     setRequiresCredentials(false);
 
@@ -244,12 +250,15 @@ export default function App() {
       // If asynchronous job processing is returned, poll check-job
       if (response.ok && data.jobId && (data.status === 'pending' || data.status === 'processing')) {
         let attempts = 0;
-        const maxAttempts = 30; // 30 seconds
+        const maxAttempts = 60; // Up to 60 polling intervals
         while (attempts < maxAttempts) {
           await new Promise((r) => setTimeout(r, 1200));
           const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
           if (checkResp.ok) {
             const checkData = await checkResp.json();
+            if (checkData.stage) {
+              setGeneratingStage(checkData.stage);
+            }
             if (checkData.status === 'completed' && checkData.result) {
               data = { ...checkData.result, success: true };
               break;
@@ -272,6 +281,14 @@ export default function App() {
         }
         setErrorNotice(data.error || 'Failed to generate visual look.');
         return;
+      }
+
+      // Quality control: capture warnings and status per category
+      if (data.warnings && Array.isArray(data.warnings)) {
+        setPipelineWarnings(data.warnings);
+      }
+      if (data.garmentStatus) {
+        setGarmentStatusMap(data.garmentStatus);
       }
 
       // Process transparent cutout and studio contact shadow for primary result
