@@ -11,9 +11,16 @@ export interface PlayerAnalysis {
 
 export interface GarmentAnalysis {
   garmentType: string;
+  subtype?: string;
+  silhouette?: string;
+  lengthCategory?: 'Full-length' | 'Cropped' | 'Short' | 'Knee-length' | 'Standard';
+  fitType?: 'Slim' | 'Straight' | 'Wide-leg' | 'Oversized' | 'Regular';
   shapeDetected: boolean;
   colorsDetected?: string[];
   patternLogos?: string;
+  collarNeckline?: string;
+  sleeves?: string;
+  pocketsZippers?: string;
   fabricNotes?: string;
   hiddenAreas?: string;
   status: 'GOOD' | 'NEEDS ENHANCEMENT' | 'NEEDS REVIEW' | 'NOT VERIFIABLE';

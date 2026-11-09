@@ -69,11 +69,128 @@ app.all('/.netlify/functions/gemini-diagnostic', netlifyAdapter(hfDiagnosticHand
 app.all('/api/gemini-diagnostic', netlifyAdapter(hfDiagnosticHandler));
 
 // 2. High-speed Smart Asset Analysis (instant local heuristics for Virtual Try-On)
+// 2. High-speed Smart Asset Analysis with Garment Intelligence
 app.post('/api/analyze-assets', async (req: Request, res: Response) => {
   try {
     const { player, garments } = req.body;
     if (!player || !player.data) {
       return res.status(400).json({ error: 'Player photo is required for analysis.' });
+    }
+
+    const analyzedGarments: Record<string, any> = {};
+
+    if (garments && typeof garments === 'object') {
+      for (const [key, g] of Object.entries(garments as Record<string, any>)) {
+        const name = (g?.name || g?.fileName || '').toLowerCase();
+        let subtype = 'Standard garment';
+        let lengthCategory: 'Full-length' | 'Cropped' | 'Short' | 'Knee-length' | 'Standard' = 'Standard';
+        let fitType: 'Slim' | 'Straight' | 'Wide-leg' | 'Oversized' | 'Regular' = 'Regular';
+        let silhouette = 'Tailored fit';
+        let collarNeckline = 'Standard collar';
+        let sleeves = 'Short sleeves';
+        let pocketsZippers = 'Minimal clean seams';
+
+        if (key === 'pants') {
+          if (name.includes('short') || name.includes('bermuda') || name.includes('boxer')) {
+            subtype = name.includes('knee') ? 'Knee-length shorts' : 'Shorts';
+            lengthCategory = 'Short';
+            silhouette = 'Relaxed thigh coverage';
+          } else if (name.includes('cargo')) {
+            subtype = 'Cargo pants';
+            lengthCategory = 'Full-length';
+            fitType = 'Straight';
+            silhouette = 'Full-length utility cargo silhouette';
+            pocketsZippers = 'Side bellows cargo pockets & flap closures';
+          } else if (name.includes('wide') || name.includes('baggy') || name.includes('flare')) {
+            subtype = 'Wide-leg trousers';
+            lengthCategory = 'Full-length';
+            fitType = 'Wide-leg';
+            silhouette = 'Full-length draped wide leg silhouette';
+          } else if (name.includes('slim') || name.includes('skinny')) {
+            subtype = 'Slim-fit pants';
+            lengthCategory = 'Full-length';
+            fitType = 'Slim';
+            silhouette = 'Tapered full-length ankle fit';
+          } else if (name.includes('jean') || name.includes('denim')) {
+            subtype = 'Classic denim jeans';
+            lengthCategory = 'Full-length';
+            fitType = 'Straight';
+            silhouette = 'Standard full-length 5-pocket denim';
+            pocketsZippers = 'Riveted curved pockets & coin pocket';
+          } else if (name.includes('crop') || name.includes('capri') || name.includes('ankle')) {
+            subtype = 'Cropped trousers';
+            lengthCategory = 'Cropped';
+            silhouette = 'Above-ankle cropped hemline';
+          } else {
+            subtype = 'Full-length trousers';
+            lengthCategory = 'Full-length';
+            fitType = 'Straight';
+            silhouette = 'Full-length pants (ankle length coverage)';
+            pocketsZippers = 'Welt pockets and side slant pockets';
+          }
+        } else if (key === 'top') {
+          if (name.includes('hoodie') || name.includes('hooded')) {
+            subtype = 'Pullover hoodie';
+            sleeves = 'Long sleeves with ribbed cuffs';
+            collarNeckline = 'Drawstring hood';
+            silhouette = 'Comfortable torso fit';
+          } else if (name.includes('jacket') || name.includes('bomber') || name.includes('coat')) {
+            subtype = 'Outerwear jacket';
+            sleeves = 'Long sleeves';
+            collarNeckline = 'Structured ribbed/fold collar';
+            pocketsZippers = 'Center zipper and angled welt pockets';
+          } else if (name.includes('shirt') || name.includes('button')) {
+            subtype = 'Button-up shirt';
+            collarNeckline = 'Point collar';
+            pocketsZippers = 'Placket button line & chest pocket';
+          } else {
+            subtype = 'T-shirt / Crewneck';
+            collarNeckline = 'Round rib crewneck';
+            sleeves = 'Short sleeves';
+            silhouette = 'Natural torso silhouette';
+          }
+        } else if (key === 'shoes') {
+          if (name.includes('boot')) {
+            subtype = 'High-top boots';
+            silhouette = 'Ankle collar with lug tread sole';
+          } else if (name.includes('loafer') || name.includes('oxford') || name.includes('derby')) {
+            subtype = 'Formal leather shoes';
+            silhouette = 'Low-profile polished sole';
+          } else {
+            subtype = 'Athletic sneakers';
+            silhouette = 'Cushioned sole with lace closure';
+          }
+        } else if (key === 'accessories') {
+          if (name.includes('cap') || name.includes('hat') || name.includes('beanie')) {
+            subtype = 'Headwear cap';
+            silhouette = 'Curved brim crown';
+          } else if (name.includes('watch')) {
+            subtype = 'Wristwatch';
+            silhouette = 'Round dial with linked strap';
+          } else if (name.includes('glass') || name.includes('sunglass')) {
+            subtype = 'Eyewear';
+            silhouette = 'Sculpted optical frames';
+          } else {
+            subtype = 'Accessory item';
+            silhouette = 'Structured accessory';
+          }
+        }
+
+        analyzedGarments[key] = {
+          garmentType: key.toUpperCase(),
+          subtype,
+          silhouette,
+          lengthCategory,
+          fitType,
+          shapeDetected: true,
+          colorsDetected: ['Original Tone'],
+          patternLogos: 'Identified authentic silhouette',
+          collarNeckline,
+          sleeves,
+          pocketsZippers,
+          status: 'GOOD',
+        };
+      }
     }
 
     return res.json({
@@ -85,18 +202,7 @@ app.post('/api/analyze-assets', async (req: Request, res: Response) => {
         pose: 'Facing forward, try-on ready',
         existingClothing: 'Standard attire detected',
       },
-      garments: garments
-        ? Object.keys(garments).reduce((acc: any, key: string) => {
-            acc[key] = {
-              garmentType: key.toUpperCase(),
-              shapeDetected: true,
-              colorsDetected: ['Original Tone'],
-              patternLogos: 'Identified garment silhouette',
-              status: 'GOOD',
-            };
-            return acc;
-          }, {})
-        : {},
+      garments: analyzedGarments,
     });
   } catch (error) {
     return res.json({

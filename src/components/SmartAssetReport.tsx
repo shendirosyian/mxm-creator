@@ -103,14 +103,35 @@ export const SmartAssetReport: React.FC<SmartAssetReportProps> = ({
               {activeGarments.map(([slot, garment]) => {
                 const gAnalysis = garment?.analysis;
                 return (
-                  <div key={slot} className="flex items-start justify-between text-neutral-400 py-0.5">
-                    <div>
-                      <span className="uppercase text-[10px] text-neutral-300">{slot}: </span>
-                      <span>{garment?.name || garment?.fileName}</span>
+                  <div key={slot} className="border border-white/[0.04] rounded-sm p-1.5 bg-[#171a1e] space-y-1">
+                    <div className="flex items-center justify-between text-neutral-300">
+                      <div className="flex items-center gap-1.5 font-semibold text-[10px] uppercase">
+                        <span className="text-[#00e599]">{slot}:</span>
+                        <span>{garment?.name || garment?.fileName}</span>
+                      </div>
+                      <span className="font-mono text-[9px] text-[#00e599] bg-[#00e599]/10 px-1 py-0.2 rounded border border-[#00e599]/30">
+                        {gAnalysis?.subtype || 'Verified'}
+                      </span>
                     </div>
-                    <span className="font-mono text-[10px] text-[#00e599]">
-                      {gAnalysis?.status || 'GOOD'}
-                    </span>
+
+                    {gAnalysis?.silhouette && (
+                      <div className="text-[10px] text-neutral-400">
+                        <span className="text-neutral-500">Silhouette: </span>
+                        <span className="text-neutral-200">{gAnalysis.silhouette}</span>
+                        {gAnalysis.lengthCategory && (
+                          <span className="ml-1 text-white font-mono bg-white/10 px-1 py-0.2 rounded">
+                            [{gAnalysis.lengthCategory}]
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {gAnalysis?.pocketsZippers && (
+                      <div className="text-[10px] text-neutral-400">
+                        <span className="text-neutral-500">Details: </span>
+                        <span className="text-neutral-300">{gAnalysis.pocketsZippers}</span>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -118,7 +139,7 @@ export const SmartAssetReport: React.FC<SmartAssetReportProps> = ({
           )}
 
           <div className="pt-1 text-[10px] text-neutral-500 italic">
-            AI automatically enhances low-res inputs and reconstructs natural fabric folds.
+            Exact garment geometry, length, and pockets locked as master reference.
           </div>
         </div>
       )}

@@ -607,6 +607,8 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
             </div>
           </div>
         )}
+      </div>
+
       {/* Quality Control & Garment Replacement Status Strip */}
       {generatedImage && (Object.keys(garmentStatusMap).length > 0 || pipelineWarnings.length > 0) && (
         <div className="border-t border-white/[0.06] bg-[#121417] px-4 py-2 text-xs">

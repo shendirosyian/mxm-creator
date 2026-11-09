@@ -631,6 +631,9 @@ export default function App() {
                 activeVariationIndex={activeVariationIndex}
                 onSelectVariation={setActiveVariationIndex}
                 isGenerating={isGenerating}
+                generatingStage={generatingStage}
+                pipelineWarnings={pipelineWarnings}
+                garmentStatusMap={garmentStatusMap}
                 onOpenExport={() => setIsExportOpen(true)}
                 onOpenBrushTool={() => setIsBrushOpen(true)}
                 hasMask={Boolean(customization.maskDataUrl)}
