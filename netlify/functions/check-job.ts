@@ -50,6 +50,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
         result: job.result,
         error: job.error,
         isQuotaExhausted: job.isQuotaExhausted,
+        isAuthError: job.isAuthError,
         requiresCredentials: job.requiresCredentials,
         updatedAt: job.updatedAt,
       }),

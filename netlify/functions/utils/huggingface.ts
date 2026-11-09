@@ -32,9 +32,8 @@ export function getHfConfig(): HfCredentials {
 }
 
 export function getMaskedHfToken(token?: string): string {
-  if (!token) return 'ANONYMOUS (Public Space Access)';
-  if (token.length <= 8) return '********';
-  return `${token.substring(0, 4)}...${token.substring(token.length - 4)} (${token.length} chars)`;
+  if (!token) return 'Not Configured (Anonymous Access)';
+  return 'Configured (Server-Side HF_TOKEN)';
 }
 
 export function parseDataUrl(dataUriOrBase64: string): { buffer: Buffer; mimeType: string } {
@@ -56,6 +55,7 @@ export interface RunTryOnOptions {
   playerBase64: string;
   garmentList: Array<{ slot: string; dataUrl: string; name?: string }>;
   garmentDescription?: string;
+  spaceId?: string;
   onProgress?: (info: { stage: string; position?: number; message?: string; progress?: number }) => void;
 }
 
@@ -65,6 +65,7 @@ export interface TryOnResult {
   maskedImageDataUrl?: string;
   error?: string;
   isQuotaExhausted?: boolean;
+  isAuthError?: boolean;
   requiresCredentials?: boolean;
   spaceUsed?: string;
   queuePosition?: number;
@@ -187,8 +188,9 @@ async function restoreOriginalProportions(
  * with strict body proportion lock and category validation.
  */
 export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnResult> {
-  const config = getHfConfig();
-  const spaceId = config.spaceId;
+  const envConfig = getHfConfig();
+  const token = envConfig.token?.trim();
+  const spaceId = (options.spaceId || envConfig.spaceId)?.trim() || 'Nymbo/Virtual-Try-On';
 
   if (!options.playerBase64) {
     return {
@@ -278,8 +280,8 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
 
     // 2. Connect to Hugging Face Gradio Space
     const connectOptions: any = {};
-    if (config.token) {
-      connectOptions.hf_token = config.token;
+    if (token) {
+      connectOptions.hf_token = token;
     }
 
     const app = await Client.connect(spaceId, connectOptions);
@@ -309,7 +311,7 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
       });
     }
 
-    // 5. Submit to /tryon endpoint:
+    // 5. Submit to /tryon endpoint with all_events=true:
     // [dict, garm_img, garment_des, is_checked, is_checked_crop, denoise_steps, seed]
     const payload = [
       humanEditorInput,
@@ -317,13 +319,15 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
       garmentDes,
       true,  // is_checked: true (Auto-generate upper-body mask using OpenPose + SCHP)
       false, // is_checked_crop: false (Preserve full image framing and aspect ratio)
-      30,    // denoise_steps: 30
+      20,    // denoise_steps: 20 (official IDM-VTON standard, optimizes ZeroGPU compute)
       42,    // seed
     ];
 
-    const job = app.submit('/tryon', payload as any);
+    // Note: passing all_events=true (5th arg) ensures status events (stage: 'pending' | 'generating' | 'error') are emitted
+    const job = (app as any).submit('/tryon', payload, null, null, true);
 
     let finalData: any = null;
+    let jobErrorMessage: string | null = null;
 
     for await (const msg of job) {
       if (msg.type === 'status') {
@@ -331,6 +335,24 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
         const position = (msg as any).position;
         const message = (msg as any).message || '';
         const progress = (msg as any).progress_data?.[0]?.progress;
+
+        if (stage === 'error') {
+          jobErrorMessage = typeof message === 'string' ? message : JSON.stringify(message);
+          const lower = (jobErrorMessage || '').toLowerCase();
+          const isExpectedNotice =
+            lower.includes('quota') ||
+            lower.includes('429') ||
+            lower.includes('rate limit') ||
+            lower.includes('401') ||
+            lower.includes('unauthorized');
+
+          if (isExpectedNotice) {
+            console.warn('[Hugging Face Status Notice]', jobErrorMessage);
+          } else {
+            console.error('[Gradio Queue Error]', jobErrorMessage);
+          }
+          break;
+        }
 
         if (options.onProgress) {
           options.onProgress({
@@ -346,10 +368,46 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
       }
     }
 
+    if (jobErrorMessage) {
+      const lowerErr = jobErrorMessage.toLowerCase();
+      const isAuthError =
+        jobErrorMessage.includes('401') ||
+        lowerErr.includes('unauthorized') ||
+        lowerErr.includes('invalid username or password') ||
+        lowerErr.includes('invalid token') ||
+        lowerErr.includes('cannot authenticate');
+
+      if (isAuthError) {
+        return {
+          success: false,
+          isAuthError: true,
+          error: `Hugging Face Authentication Failed: The HF_TOKEN configured in Netlify environment variables is invalid or expired. Check token permissions (minimum: Read role) at https://huggingface.co/settings/tokens.`,
+          spaceUsed: spaceId,
+        };
+      }
+
+      const isZeroGpu =
+        jobErrorMessage.includes('ZeroGPU quota') ||
+        jobErrorMessage.includes('quota') ||
+        jobErrorMessage.includes('Rate limit') ||
+        jobErrorMessage.includes('429');
+
+      const rawHfMessage = jobErrorMessage.replace(/['"]+/g, '').trim();
+
+      return {
+        success: false,
+        isQuotaExhausted: isZeroGpu,
+        error: isZeroGpu
+          ? `Hugging Face ZeroGPU quota reached: ${rawHfMessage}. Accounts with HF_TOKEN receive individual ZeroGPU allocations (~90s per rolling window); if this allocation is exhausted, please allow the standard cooldown window to replenish.`
+          : `Space Error: ${rawHfMessage}`,
+        spaceUsed: spaceId,
+      };
+    }
+
     if (!finalData || !Array.isArray(finalData) || finalData.length === 0) {
       return {
         success: false,
-        error: 'Virtual Try-On finished without returning output image data.',
+        error: 'Virtual Try-On queue ended without returning output image data. The Space worker may be experiencing high demand.',
         spaceUsed: spaceId,
       };
     }
@@ -435,6 +493,24 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
   } catch (err: any) {
     const errorStr = String(err?.message || err);
 
+    const lowerErr = errorStr.toLowerCase();
+    const isAuthError =
+      errorStr.includes('401') ||
+      lowerErr.includes('unauthorized') ||
+      lowerErr.includes('invalid username or password') ||
+      lowerErr.includes('invalid token') ||
+      lowerErr.includes('cannot authenticate');
+
+    if (isAuthError) {
+      return {
+        success: false,
+        isAuthError: true,
+        spaceUsed: spaceId,
+        error:
+          'Hugging Face Authentication Failed: The HF_TOKEN configured in Netlify environment variables is invalid or expired. Verify your token at https://huggingface.co/settings/tokens.',
+      };
+    }
+
     // Detect Hugging Face ZeroGPU quota / rate limit conditions
     const isZeroGpuQuota =
       errorStr.includes('GPU quota exceeded') ||
@@ -444,12 +520,13 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
       errorStr.includes('429');
 
     if (isZeroGpuQuota) {
+      const rawMsg = errorStr.replace(/['"]+/g, '').trim();
       return {
         success: false,
         isQuotaExhausted: true,
         spaceUsed: spaceId,
         error:
-          'Hugging Face ZeroGPU compute quota reached for this session. Please wait for the ZeroGPU window to refresh, or set a personal HF_TOKEN in Netlify environment variables.',
+          `Hugging Face ZeroGPU quota limit: ${rawMsg}. Authenticated tokens receive personal ZeroGPU quota allocations (~90s per window); once consumed, please wait for the standard refresh window.`,
       };
     }
 
@@ -468,27 +545,79 @@ export async function runVirtualTryOn(options: RunTryOnOptions): Promise<TryOnRe
  * 3. Inspects token configuration without revealing secrets.
  * 4. Never generates an image during diagnostic test.
  */
-export async function runHfDiagnostic(): Promise<{
+export async function runHfDiagnostic(options?: { spaceId?: string }): Promise<{
   success: boolean;
   statusCode: number;
   statusText: string;
   spaceId: string;
-  hasHfToken: boolean;
-  maskedToken: string;
+  tokenConfigured: boolean;
+  tokenValidity: 'VALID' | 'INVALID' | 'UNCHECKED' | 'NOT_CONFIGURED';
+  authType: 'PERSONAL_TOKEN' | 'ANONYMOUS_PUBLIC';
   hardware: string;
   stage: string;
   sanitizedMessage: string;
   endpointsFound: string[];
+  quotaNote: string;
 }> {
-  const config = getHfConfig();
-  const spaceId = config.spaceId;
-  const hasHfToken = Boolean(config.token);
-  const maskedToken = getMaskedHfToken(config.token);
+  const envConfig = getHfConfig();
+  const token = envConfig.token?.trim();
+  const spaceId = (options?.spaceId || envConfig.spaceId)?.trim() || 'Nymbo/Virtual-Try-On';
+  const tokenConfigured = Boolean(token);
+
+  let tokenValidity: 'VALID' | 'INVALID' | 'UNCHECKED' | 'NOT_CONFIGURED' = 'NOT_CONFIGURED';
+  let authType: 'PERSONAL_TOKEN' | 'ANONYMOUS_PUBLIC' = 'ANONYMOUS_PUBLIC';
+  let authErrorDetails: string | null = null;
+
+  // 1. If server HF_TOKEN is configured, verify validity via Hugging Face API
+  if (tokenConfigured && token) {
+    authType = 'PERSONAL_TOKEN';
+    try {
+      const whoamiResp = await fetch('https://huggingface.co/api/whoami-v2', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (whoamiResp.status === 200) {
+        tokenValidity = 'VALID';
+      } else if (whoamiResp.status === 401 || whoamiResp.status === 403) {
+        tokenValidity = 'INVALID';
+        authErrorDetails = 'Hugging Face rejected the configured HF_TOKEN (HTTP 401 Unauthorized). The token may be invalid, revoked, or expired.';
+      } else {
+        tokenValidity = 'UNCHECKED';
+      }
+    } catch {
+      tokenValidity = 'UNCHECKED';
+    }
+  }
+
+  // If token is explicitly rejected, fail fast with authentication error
+  if (tokenValidity === 'INVALID') {
+    return {
+      success: false,
+      statusCode: 401,
+      statusText: 'Authentication Failed',
+      spaceId,
+      tokenConfigured: true,
+      tokenValidity: 'INVALID',
+      authType: 'PERSONAL_TOKEN',
+      hardware: 'zero-a10g',
+      stage: 'AUTH_FAILED',
+      endpointsFound: [],
+      sanitizedMessage:
+        authErrorDetails ||
+        'Server HF_TOKEN is configured in Netlify environment variables, but Hugging Face rejected it (401 Unauthorized). Please generate a new "Read" token at https://huggingface.co/settings/tokens.',
+      quotaNote:
+        'Personal tokens provide dedicated account ZeroGPU quota (~90s per window). Note that ZeroGPU limits still apply once account quota is consumed.',
+    };
+  }
 
   try {
-    // 1. Check Space status via official Hugging Face Spaces API
+    // 2. Check Space status via official Hugging Face Spaces API
+    const spaceHeaders: Record<string, string> = {};
+    if (token) {
+      spaceHeaders.Authorization = `Bearer ${token}`;
+    }
+
     const spaceApiResp = await fetch(`https://huggingface.co/api/spaces/${spaceId}`, {
-      headers: config.token ? { Authorization: `Bearer ${config.token}` } : {},
+      headers: spaceHeaders,
     });
 
     let hardware = 'zero-a10g (ZeroGPU)';
@@ -500,10 +629,10 @@ export async function runHfDiagnostic(): Promise<{
       hardware = spaceData?.runtime?.hardware?.current || 'zero-a10g';
     }
 
-    // 2. Connect via Gradio Client to test endpoint connectivity
+    // 3. Connect via Gradio Client to test endpoint connectivity
     const connectOptions: any = {};
-    if (config.token) {
-      connectOptions.hf_token = config.token;
+    if (token) {
+      connectOptions.hf_token = token;
     }
 
     const app = await Client.connect(spaceId, connectOptions);
@@ -518,26 +647,38 @@ export async function runHfDiagnostic(): Promise<{
         statusCode: 502,
         statusText: 'Endpoint Missing',
         spaceId,
-        hasHfToken,
-        maskedToken,
+        tokenConfigured,
+        tokenValidity,
+        authType,
         hardware,
         stage,
         endpointsFound: endpoints,
         sanitizedMessage: `Connected to Space ${spaceId}, but required /tryon endpoint was not found.`,
+        quotaNote: 'Ensure the target space implements the IDM-VTON /tryon endpoint.',
       };
     }
+
+    const message = tokenConfigured
+      ? `Connected successfully to ${spaceId} (${hardware}) using server HF_TOKEN (personal account quota active).`
+      : `Connected to ${spaceId} (${hardware}) using public anonymous access. Shared public ZeroGPU quota may experience rate limits (HTTP 429) during peak hours. Configure HF_TOKEN in Netlify environment variables for personal account quota.`;
+
+    const quotaNote = tokenConfigured
+      ? 'Personal account ZeroGPU allocation active (~90s per window). Note: ZeroGPU limits still apply once your personal account quota is consumed.'
+      : 'Public anonymous access shares a communal ZeroGPU compute pool across all users, which easily reaches rate limits (429). Configure server HF_TOKEN to switch to your individual account quota.';
 
     return {
       success: true,
       statusCode: 200,
       statusText: 'OK',
       spaceId,
-      hasHfToken,
-      maskedToken,
+      tokenConfigured,
+      tokenValidity,
+      authType,
       hardware,
       stage,
       endpointsFound: endpoints,
-      sanitizedMessage: `Connected successfully to ${spaceId} (${hardware}). AI Virtual Try-On pipeline ready.`,
+      sanitizedMessage: message,
+      quotaNote,
     };
   } catch (err: any) {
     const errorStr = String(err?.message || err);
@@ -546,12 +687,14 @@ export async function runHfDiagnostic(): Promise<{
       statusCode: 503,
       statusText: 'Connection Error',
       spaceId,
-      hasHfToken,
-      maskedToken,
+      tokenConfigured,
+      tokenValidity,
+      authType,
       hardware: 'zero-a10g',
       stage: 'UNKNOWN',
       endpointsFound: [],
       sanitizedMessage: `Failed to connect to Hugging Face Space: ${errorStr}`,
+      quotaNote: 'Check Space availability or verify that your Netlify server can access Hugging Face.',
     };
   }
 }

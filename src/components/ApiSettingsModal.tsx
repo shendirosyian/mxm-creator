@@ -7,10 +7,12 @@ import {
   ShieldCheck,
   Server,
   Cpu,
-  Layers,
   Save,
   RefreshCw,
   ExternalLink,
+  Key,
+  Info,
+  Check,
 } from 'lucide-react';
 
 interface ApiSettingsModalProps {
@@ -22,13 +24,15 @@ export interface HfDiagnosticData {
   success: boolean;
   spaceId: string;
   hardware: string;
-  hasHfToken: boolean;
-  maskedToken: string;
+  tokenConfigured: boolean;
+  tokenValidity: 'VALID' | 'INVALID' | 'UNCHECKED' | 'NOT_CONFIGURED';
+  authType: 'PERSONAL_TOKEN' | 'ANONYMOUS_PUBLIC';
   statusCode: number;
   statusText: string;
   sanitizedMessage: string;
-  spaceStatus: string;
-  endpointTested: string;
+  stage: string;
+  quotaNote?: string;
+  endpointsFound?: string[];
   timestamp?: string;
 }
 
@@ -40,6 +44,21 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
   });
   const [isSaved, setIsSaved] = useState(false);
 
+  // Transient token input for server environment configuration (never stored in browser)
+  const [tokenInput, setTokenInput] = useState('');
+  const [isUpdatingToken, setIsUpdatingToken] = useState(false);
+  const [tokenUpdateMsg, setTokenUpdateMsg] = useState<{ success: boolean; message: string } | null>(null);
+
+  // Security guarantee: Purge any legacy client-side token from localStorage / sessionStorage
+  useEffect(() => {
+    try {
+      localStorage.removeItem('mxm_hf_token');
+      sessionStorage.removeItem('mxm_hf_token');
+    } catch {
+      // storage unavailable
+    }
+  }, []);
+
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -49,7 +68,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Run initial lightweight status check when opening modal if not yet checked
+  // Run initial server status check when opening modal if not yet checked
   useEffect(() => {
     if (isOpen && !diagnostic && !isTesting) {
       handleTestConnection();
@@ -60,24 +79,54 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
     setIsTesting(true);
     setIsSaved(false);
     try {
-      const res = await fetch('/.netlify/functions/hf-diagnostic');
+      const res = await fetch(`/.netlify/functions/hf-diagnostic?spaceId=${encodeURIComponent(spaceId.trim())}`);
       const data: HfDiagnosticData = await res.json();
       setDiagnostic(data);
     } catch (err: any) {
       setDiagnostic({
         success: false,
-        spaceId: 'Nymbo/Virtual-Try-On',
+        spaceId: spaceId || 'Nymbo/Virtual-Try-On',
         hardware: 'zero-a10g',
-        hasHfToken: false,
-        maskedToken: 'NONE',
+        tokenConfigured: false,
+        tokenValidity: 'UNCHECKED',
+        authType: 'ANONYMOUS_PUBLIC',
         statusCode: 500,
         statusText: 'Diagnostic Failed',
-        sanitizedMessage: err?.message || 'Could not connect to Hugging Face diagnostic endpoint.',
-        spaceStatus: 'ERROR',
-        endpointTested: 'https://huggingface.co/spaces/Nymbo/Virtual-Try-On',
+        sanitizedMessage: err?.message || 'Could not connect to Netlify Hugging Face diagnostic endpoint.',
+        stage: 'ERROR',
+        quotaNote: 'Check server logs or network connectivity.',
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleConfigureServerToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tokenInput.trim()) return;
+    setIsUpdatingToken(true);
+    setTokenUpdateMsg(null);
+    try {
+      const res = await fetch('/api/configure-server-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: tokenInput.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setTokenUpdateMsg({ success: false, message: data.error || 'Failed to configure server token.' });
+      } else {
+        setTokenInput(''); // Clear immediately so it never resides in client memory
+        setTokenUpdateMsg({
+          success: true,
+          message: 'Server HF_TOKEN verified with Hugging Face and saved to server environment.',
+        });
+        handleTestConnection();
+      }
+    } catch (err: any) {
+      setTokenUpdateMsg({ success: false, message: err?.message || 'Network error updating server token.' });
+    } finally {
+      setIsUpdatingToken(false);
     }
   };
 
@@ -98,7 +147,7 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
       />
 
       {/* Modal Dialog */}
-      <div className="relative w-full max-w-lg rounded-xl border border-white/[0.08] bg-[#121417] p-6 shadow-2xl text-neutral-200">
+      <div className="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-xl border border-white/[0.08] bg-[#121417] p-6 shadow-2xl text-neutral-200">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
           <div className="flex items-center gap-2.5">
@@ -107,10 +156,10 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
             </span>
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wider text-white">
-                Hugging Face ZeroGPU Try-On Settings
+                Hugging Face ZeroGPU &amp; Auth Settings
               </h2>
               <p className="text-[11px] text-neutral-400">
-                Gradio API proxy via Netlify Functions · Nymbo/Virtual-Try-On
+                Server-side Netlify Functions Proxy · ZeroGPU Try-On Pipeline
               </p>
             </div>
           </div>
@@ -125,33 +174,43 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
 
         {/* Body Content */}
         <div className="mt-5 space-y-4">
-          {/* Card 1: Connection Status & Real HTTP Result */}
+          {/* Card 1: Server Authentication Status */}
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400">
-                Space Status
+                Server Authentication Status
               </span>
               {diagnostic && (
                 <span
                   className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[10px] font-medium ${
-                    diagnostic.success
+                    diagnostic.tokenConfigured && diagnostic.tokenValidity === 'VALID'
                       ? 'border border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                      : diagnostic.statusCode === 401 || diagnostic.tokenValidity === 'INVALID'
+                      ? 'border border-rose-500/40 bg-rose-500/10 text-rose-400'
                       : diagnostic.statusCode === 429
                       ? 'border border-amber-500/40 bg-amber-500/10 text-amber-400'
-                      : 'border border-rose-500/40 bg-rose-500/10 text-rose-400'
+                      : 'border border-neutral-600 bg-neutral-800 text-neutral-300'
                   }`}
                 >
-                  {diagnostic.success ? (
+                  {diagnostic.tokenConfigured && diagnostic.tokenValidity === 'VALID' ? (
                     <>
-                      <CheckCircle2 className="h-3 w-3" /> Ready · {diagnostic.spaceStatus}
+                      <CheckCircle2 className="h-3 w-3" /> Authenticated · Personal Quota
+                    </>
+                  ) : diagnostic.statusCode === 401 || diagnostic.tokenValidity === 'INVALID' ? (
+                    <>
+                      <XCircle className="h-3 w-3" /> Invalid Token (HTTP 401)
                     </>
                   ) : diagnostic.statusCode === 429 ? (
                     <>
-                      <AlertTriangle className="h-3 w-3" /> ZeroGPU Quota Reached
+                      <AlertTriangle className="h-3 w-3" /> ZeroGPU Quota Limit (429)
+                    </>
+                  ) : diagnostic.tokenConfigured ? (
+                    <>
+                      <CheckCircle2 className="h-3 w-3" /> Token Configured
                     </>
                   ) : (
                     <>
-                      <XCircle className="h-3 w-3" /> Status: {diagnostic.statusCode}
+                      <Info className="h-3 w-3" /> Anonymous Public Access
                     </>
                   )}
                 </span>
@@ -160,60 +219,72 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
 
             {/* Diagnostic Details Grid */}
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
+              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2.5">
                 <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                  ZeroGPU Hardware
+                  Server HF_TOKEN
                 </span>
-                <span className="font-mono text-[11px] text-[#00e599] font-medium">
-                  {diagnostic ? diagnostic.hardware : 'zero-a10g'}
+                <span className="font-mono text-[11px] text-white font-medium">
+                  {diagnostic
+                    ? diagnostic.tokenConfigured
+                      ? diagnostic.tokenValidity === 'VALID'
+                        ? 'Configured & Verified'
+                        : diagnostic.tokenValidity === 'INVALID'
+                        ? 'Configured (Invalid 401)'
+                        : 'Configured (Server)'
+                      : 'Not Configured (Public Pool)'
+                    : 'Checking server...'}
                 </span>
               </div>
-              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2">
+              <div className="rounded border border-white/[0.04] bg-[#1a1d22] p-2.5">
                 <span className="text-[10px] text-neutral-400 uppercase tracking-wider block">
-                  HF Token (Netlify)
+                  ZeroGPU Quota Type
                 </span>
-                <span className="font-mono text-[11px] text-neutral-200">
-                  {diagnostic ? (diagnostic.hasHfToken ? diagnostic.maskedToken : 'Optional (Public)') : 'Checking...'}
+                <span className="font-mono text-[11px] text-[#00e599] font-medium">
+                  {diagnostic?.authType === 'PERSONAL_TOKEN'
+                    ? 'Personal Account Quota'
+                    : 'Shared Anonymous IP Pool'}
                 </span>
               </div>
             </div>
 
-            {/* Live Message & Endpoint Feedback */}
+            {/* Status Message Feedback */}
             {diagnostic && (
               <div
                 className={`rounded border p-2.5 text-xs ${
-                  diagnostic.success
-                    ? 'border-[#00e599]/20 bg-[#00e599]/5 text-neutral-200'
+                  diagnostic.statusCode === 401 || diagnostic.tokenValidity === 'INVALID'
+                    ? 'border-rose-500/20 bg-rose-500/5 text-rose-200'
                     : diagnostic.statusCode === 429
                     ? 'border-amber-500/20 bg-amber-500/5 text-amber-200'
-                    : 'border-rose-500/20 bg-rose-500/5 text-rose-200'
+                    : diagnostic.success
+                    ? 'border-[#00e599]/20 bg-[#00e599]/5 text-neutral-200'
+                    : 'border-white/10 bg-white/5 text-neutral-300'
                 }`}
               >
                 <div className="flex items-start gap-2">
                   <div className="mt-0.5">
-                    {diagnostic.success ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-[#00e599] shrink-0" />
+                    {diagnostic.statusCode === 401 || diagnostic.tokenValidity === 'INVALID' ? (
+                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
                     ) : diagnostic.statusCode === 429 ? (
                       <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
                     ) : (
-                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-[#00e599] shrink-0" />
                     )}
                   </div>
                   <div className="space-y-1">
                     <p className="text-[11px] font-medium leading-relaxed">
                       {diagnostic.sanitizedMessage}
                     </p>
-                    <div className="flex items-center gap-2 font-mono text-[10px] text-neutral-400">
-                      <span>Space: {diagnostic.spaceId}</span>
-                      <span>·</span>
-                      <span>Status: {diagnostic.spaceStatus}</span>
-                    </div>
+                    {diagnostic.quotaNote && (
+                      <p className="text-[10px] text-neutral-400 leading-relaxed">
+                        {diagnostic.quotaNote}
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Action: Test Connection Button */}
+            {/* Action: Test Server Connection Button */}
             <div className="pt-1">
               <button
                 type="button"
@@ -222,12 +293,86 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                 className="w-full flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#20252b] py-2 text-xs font-semibold text-white hover:bg-[#282e36] hover:border-white/20 transition-colors disabled:opacity-50"
               >
                 <RefreshCw className={`h-3.5 w-3.5 text-[#00e599] ${isTesting ? 'animate-spin' : ''}`} />
-                <span>{isTesting ? 'Checking Hugging Face ZeroGPU Space...' : 'TEST SPACE CONNECTION'}</span>
+                <span>{isTesting ? 'Verifying Server Authentication...' : 'TEST SERVER CONNECTION'}</span>
               </button>
             </div>
           </div>
 
-          {/* Card 2: Space Configuration */}
+          {/* Card 2: Set Server-Side HF_TOKEN */}
+          <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300 flex items-center gap-1.5">
+                <Key className="h-3.5 w-3.5 text-[#00e599]" />
+                <span>Configure Server HF_TOKEN</span>
+              </span>
+              <a
+                href="https://huggingface.co/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-[11px] text-[#00e599] hover:underline"
+              >
+                <span>Get Free Token</span>
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            </div>
+
+            <form onSubmit={handleConfigureServerToken} className="space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                  className="flex-1 rounded-lg border border-white/10 bg-[#121417] px-3 py-2 font-mono text-xs text-white placeholder-neutral-500 focus:border-[#00e599] focus:outline-hidden"
+                />
+                <button
+                  type="submit"
+                  disabled={isUpdatingToken || !tokenInput.trim()}
+                  className="rounded-lg bg-[#00e599] px-3.5 py-2 text-xs font-semibold text-black hover:bg-[#00ffaa] transition-colors disabled:opacity-50 whitespace-nowrap flex items-center gap-1"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>{isUpdatingToken ? 'Verifying...' : 'Set Token'}</span>
+                </button>
+              </div>
+
+              {tokenUpdateMsg && (
+                <div
+                  className={`rounded p-2 text-xs ${
+                    tokenUpdateMsg.success
+                      ? 'border border-[#00e599]/30 bg-[#00e599]/10 text-[#00e599]'
+                      : 'border border-rose-500/30 bg-rose-500/10 text-rose-300'
+                  }`}
+                >
+                  {tokenUpdateMsg.message}
+                </div>
+              )}
+
+              <p className="text-[10px] text-neutral-400 leading-relaxed">
+                Tokens are validated with Hugging Face and saved directly to server-side environment storage (<code className="text-[#00e599]">.env</code>). Never stored in browser localStorage or client JavaScript.
+              </p>
+            </form>
+          </div>
+
+          {/* Card 3: Instructions for Netlify Dashboard Deployment */}
+          <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-300 block border-b border-white/[0.06] pb-2">
+              Production Netlify Instructions
+            </span>
+
+            <ol className="space-y-1.5 text-xs text-neutral-300 list-decimal pl-4">
+              <li className="leading-relaxed">
+                Create a token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noreferrer" className="text-[#00e599] hover:underline">huggingface.co/settings/tokens</a> with role <strong className="text-white">"Read"</strong>.
+              </li>
+              <li className="leading-relaxed">
+                In Netlify Dashboard: <strong className="text-white">Site configuration &gt; Environment variables &gt; Add a variable</strong>.
+              </li>
+              <li className="leading-relaxed">
+                Key: <code className="text-[#00e599] font-mono">HF_TOKEN</code>, Value: your token (<code className="font-mono">hf_...</code>).
+              </li>
+            </ol>
+          </div>
+
+          {/* Card 4: Target Hugging Face Space & Presets */}
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-4 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-semibold uppercase tracking-wider text-neutral-400 flex items-center gap-1.5">
@@ -247,14 +392,38 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                 placeholder="Nymbo/Virtual-Try-On"
                 className="w-full rounded-lg border border-white/10 bg-[#121417] px-3 py-2 font-mono text-xs text-white placeholder-neutral-500 focus:border-[#00e599] focus:outline-hidden"
               />
-              <p className="mt-1.5 text-[10px] text-neutral-400 leading-relaxed">
-                Default candidate: <span className="font-mono text-neutral-200">Nymbo/Virtual-Try-On</span>. Server proxy connects securely via <span className="font-mono text-neutral-200">@gradio/client</span> to the <span className="font-mono text-[#00e599]">/tryon</span> endpoint.
-              </p>
             </div>
 
-            <div className="flex items-center justify-between pt-1">
+            {/* Quick Space Presets */}
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-[10px] text-neutral-500">Presets:</span>
+              <button
+                type="button"
+                onClick={() => setSpaceId('Nymbo/Virtual-Try-On')}
+                className={`rounded px-2 py-1 font-mono text-[10px] border transition-colors ${
+                  spaceId === 'Nymbo/Virtual-Try-On'
+                    ? 'border-[#00e599] bg-[#00e599]/10 text-[#00e599]'
+                    : 'border-white/10 bg-[#1a1d22] text-neutral-400 hover:text-white'
+                }`}
+              >
+                Nymbo/Virtual-Try-On (Default)
+              </button>
+              <button
+                type="button"
+                onClick={() => setSpaceId('yisol/IDM-VTON')}
+                className={`rounded px-2 py-1 font-mono text-[10px] border transition-colors ${
+                  spaceId === 'yisol/IDM-VTON'
+                    ? 'border-[#00e599] bg-[#00e599]/10 text-[#00e599]'
+                    : 'border-white/10 bg-[#1a1d22] text-neutral-400 hover:text-white'
+                }`}
+              >
+                yisol/IDM-VTON (Alt Space)
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
               <span className="text-[10px] text-neutral-400">
-                {isSaved ? <span className="text-[#00e599] font-medium">✓ Settings Saved</span> : 'Saved to browser preference'}
+                {isSaved ? <span className="text-[#00e599] font-medium">✓ Space Preference Saved</span> : 'Target Space Preference'}
               </span>
               <button
                 type="button"
@@ -262,40 +431,20 @@ export const ApiSettingsModal: React.FC<ApiSettingsModalProps> = ({ isOpen, onCl
                 className="flex items-center gap-1.5 rounded-lg bg-[#00e599] px-3 py-1.5 text-xs font-semibold text-black hover:bg-[#00ffaa] transition-colors"
               >
                 <Save className="h-3 w-3 stroke-[2.5]" />
-                <span>SAVE SETTINGS</span>
+                <span>SAVE SPACE</span>
               </button>
             </div>
           </div>
 
-          {/* Card 3: Security & Netlify Token Instructions */}
+          {/* Card 5: Security Guarantee */}
           <div className="rounded-lg border border-white/[0.06] bg-[#16181b] p-3 text-[11px] text-neutral-300 space-y-1.5">
             <div className="flex items-center gap-2 text-white font-medium text-xs">
               <ShieldCheck className="h-4 w-4 text-[#00e599]" />
-              <span>Secure Server-Side Architecture</span>
+              <span>Strict Server-Side Security</span>
             </div>
             <p className="text-[10px] text-neutral-400 leading-relaxed">
-              Hugging Face API requests are proxied securely through Netlify Functions. To increase ZeroGPU quota limits or use your own Hugging Face tier, set <span className="font-mono text-white">HF_TOKEN</span> in Netlify environment variables (<strong className="text-neutral-200">Site configuration &gt; Environment variables</strong>).
+              Your Hugging Face token is stored solely in Netlify server-side environment variables and used exclusively by Netlify Functions. Tokens are never placed in browser storage, client bundles, or API responses.
             </p>
-            <div className="pt-1 flex items-center justify-between">
-              <a
-                href="https://huggingface.co/spaces/Nymbo/Virtual-Try-On"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] text-[#00e599] hover:underline"
-              >
-                <span>View Nymbo/Virtual-Try-On Space</span>
-                <ExternalLink className="h-2.5 w-2.5" />
-              </a>
-              <a
-                href="https://huggingface.co/settings/tokens"
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-1 text-[10px] text-neutral-400 hover:text-white hover:underline"
-              >
-                <span>HF Access Tokens</span>
-                <ExternalLink className="h-2.5 w-2.5" />
-              </a>
-            </div>
           </div>
         </div>
 

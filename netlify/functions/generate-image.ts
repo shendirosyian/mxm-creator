@@ -5,7 +5,7 @@ import { createJob, updateJob } from './utils/jobs';
 const defaultHeaders: Record<string, string> = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-hf-space-id, X-Hf-Space-Id',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
@@ -35,7 +35,15 @@ export const handler: Handler = async (event: HandlerEvent) => {
       customization = {},
       mode = 'REALISTIC',
       aspectRatio = '3:4',
+      spaceId,
     } = payload;
+
+    const userSpaceId = (
+      (event.headers?.['x-hf-space-id'] as string) ||
+      (event.headers?.['X-Hf-Space-Id'] as string) ||
+      spaceId ||
+      ''
+    )?.trim();
 
     if (!player || !player.data) {
       return {
@@ -75,7 +83,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
     const topGarment = garmentList.find((g) => g.slot === 'top' || g.slot === 'shirt') || garmentList[0];
     const garmentDescription = customPrompt || topGarment.name || 'Fashion garment, natural fit';
 
-    console.log(`[Generate-Image] Job ${jobId} initialized: ${garmentList.length} garments staged. Selected master: ${topGarment.name} (${topGarment.slot})`);
+    console.log(`[Generate-Image] Job ${jobId} initialized: ${garmentList.length} garments staged. Selected master: ${topGarment.name} (${topGarment.slot}) (Space: ${userSpaceId || 'default'})`);
 
     updateJob(jobId, {
       status: 'processing',
@@ -89,6 +97,7 @@ export const handler: Handler = async (event: HandlerEvent) => {
       playerBase64: player.data,
       garmentList,
       garmentDescription,
+      spaceId: userSpaceId || undefined,
       onProgress: (info) => {
         updateJob(jobId, {
           status: 'processing',
@@ -108,16 +117,23 @@ export const handler: Handler = async (event: HandlerEvent) => {
         status: 'failed',
         error: tryOnResult.error,
         isQuotaExhausted: tryOnResult.isQuotaExhausted,
+        isAuthError: tryOnResult.isAuthError,
         requiresCredentials: tryOnResult.requiresCredentials,
       });
 
-      const statusCode = tryOnResult.isQuotaExhausted ? 429 : 500;
+      const statusCode = tryOnResult.isAuthError
+        ? 401
+        : tryOnResult.isQuotaExhausted
+        ? 429
+        : 500;
+
       return {
         statusCode,
         headers: defaultHeaders,
         body: JSON.stringify({
           error: tryOnResult.error,
           isQuotaExhausted: tryOnResult.isQuotaExhausted,
+          isAuthError: tryOnResult.isAuthError,
           requiresCredentials: tryOnResult.requiresCredentials,
           spaceUsed: tryOnResult.spaceUsed,
           jobId,

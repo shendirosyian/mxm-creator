@@ -21,6 +21,7 @@ export interface GenerationJob {
   };
   error?: string;
   isQuotaExhausted?: boolean;
+  isAuthError?: boolean;
   requiresCredentials?: boolean;
 }
 

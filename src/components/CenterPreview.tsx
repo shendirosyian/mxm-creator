@@ -11,6 +11,8 @@ import {
   Columns,
   Grid,
   Check,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 import { LookVariation, PlayerAsset } from '../types';
 
@@ -234,48 +236,94 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
 
   // ZeroGPU Quota Exhaustion Notice State
   if (isQuotaError && !generatedImage) {
+    const handleSwitchSpaceAndRetry = (newSpace: string) => {
+      localStorage.setItem('mxm_hf_space_id', newSpace);
+      onRetry?.();
+    };
+
     return (
-      <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-xl border border-amber-500/30 bg-[#0e1012] p-8 text-center">
-        <div className="relative mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-amber-500/40 bg-amber-500/10 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.15)]">
-          <Layers className="h-8 w-8 text-amber-400" />
+      <div className="flex h-full min-h-[500px] flex-col items-center justify-center rounded-xl border border-amber-500/30 bg-[#0e1012] p-6 text-center">
+        <div className="relative mb-3 flex h-14 w-14 items-center justify-center rounded-2xl border border-amber-500/40 bg-amber-500/10 text-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.15)]">
+          <Layers className="h-7 w-7 text-amber-400" />
         </div>
         <h2 className="text-base font-bold text-white uppercase tracking-wider">
           Hugging Face ZeroGPU Limit Reached
         </h2>
-        <p className="mt-2 max-w-md text-xs text-neutral-300 leading-relaxed">
-          {setupErrorMessage || 'The ZeroGPU quota for Nymbo/Virtual-Try-On has temporarily been reached. ZeroGPU quotas automatically replenish after a short cooling period.'}
+        <p className="mt-2 max-w-lg text-xs text-neutral-300 leading-relaxed">
+          {setupErrorMessage || 'The ZeroGPU public quota has temporarily been reached. ZeroGPU quotas automatically replenish after a short cooling period.'}
         </p>
 
-        <p className="mt-3 text-[11px] text-neutral-400 max-w-md">
-          To bypass public queue limits, you can add your free personal Hugging Face user access token via <span className="font-mono text-white">HF_TOKEN</span> in Netlify environment variables or test the connection in{' '}
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="text-[#00e599] underline hover:text-[#00ffaa] ml-1 inline-block"
-          >
-            API Settings
-          </button>.
-        </p>
+        {/* Server Environment Variable Configuration Guidance */}
+        <div className="mt-4 w-full max-w-md rounded-xl border border-white/10 bg-[#16181b] p-4 text-left shadow-lg space-y-2.5">
+          <div className="flex items-center justify-between border-b border-white/[0.06] pb-2">
+            <span className="text-xs font-semibold text-white flex items-center gap-1.5">
+              <Key className="h-3.5 w-3.5 text-[#00e599]" />
+              <span>Use Personal ZeroGPU Account Quota</span>
+            </span>
+            <a
+              href="https://huggingface.co/settings/tokens"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-[11px] text-[#00e599] hover:underline"
+            >
+              <span>Get Free HF Token</span>
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
+          </div>
 
-        <div className="mt-6 flex items-center gap-3">
+          <div className="space-y-1.5 text-xs text-neutral-300">
+            <p className="text-[11px] text-neutral-400 leading-relaxed">
+              To bypass communal IP rate limits, set your personal Hugging Face token securely as a Netlify server environment variable:
+            </p>
+            <ol className="list-decimal pl-4 space-y-1 text-[11px] text-neutral-300">
+              <li>Create a token on Hugging Face with <strong className="text-white">"Read"</strong> role (no write permissions needed).</li>
+              <li>In Netlify, open <strong className="text-white">Site configuration &gt; Environment variables</strong>.</li>
+              <li>Add variable: Key = <code className="text-[#00e599] font-mono">HF_TOKEN</code>, Value = your token.</li>
+              <li>Click <em>Retry Try-On</em> once deployed.</li>
+            </ol>
+            <p className="text-[10px] text-neutral-400 pt-1 border-t border-white/[0.04]">
+              Note: Personal tokens provide individual account ZeroGPU quota (~90s per window). ZeroGPU compute limits still apply once your account quota is exhausted.
+            </p>
+          </div>
+        </div>
+
+        {/* Quick Space Alternatives & Actions */}
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
               disabled={isGenerating}
-              className="flex items-center gap-2 rounded-lg bg-[#00e599] px-4 py-2 text-xs font-bold uppercase tracking-wider text-black hover:bg-[#00ffaa] transition-colors"
+              className="flex items-center gap-2 rounded-lg bg-[#00e599] px-4 py-2 text-xs font-bold uppercase tracking-wider text-black hover:bg-[#00ffaa] transition-colors shadow-sm"
             >
               <Sparkles className="h-3.5 w-3.5" />
               <span>Retry Try-On</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => handleSwitchSpaceAndRetry('yisol/IDM-VTON')}
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#1c2026] px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-[#252b33] hover:text-white transition-colors"
+          >
+            <span>Try Alternate Space (yisol/IDM-VTON)</span>
+          </button>
+          {onOpenSettings && (
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#181b1f] px-3 py-2 text-xs font-medium text-neutral-200 hover:bg-white/10 transition-colors"
+            >
+              <span>API Settings</span>
             </button>
           )}
           {onDismissError && (
             <button
               type="button"
               onClick={onDismissError}
-              className="rounded-lg border border-white/10 bg-[#16181b] px-4 py-2 text-xs font-medium text-neutral-300 hover:text-white transition-colors"
+              className="rounded-lg border border-white/10 bg-[#16181b] px-3 py-2 text-xs font-medium text-neutral-400 hover:text-white transition-colors"
             >
-              Return to Staged Assets
+              Back to Staged Assets
             </button>
           )}
         </div>

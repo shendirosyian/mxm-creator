@@ -226,10 +226,20 @@ export default function App() {
         }
       }
 
-      // Call Netlify Function for image generation
+      // Retrieve custom space preference if configured in browser
+      const userSpaceId = localStorage.getItem('mxm_hf_space_id')?.trim() || '';
+
+      const requestHeaders: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (userSpaceId) {
+        requestHeaders['x-hf-space-id'] = userSpaceId;
+      }
+
+      // Call Netlify Function for image generation (authentication handled server-side via HF_TOKEN)
       const response = await fetch('/.netlify/functions/generate-image', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: requestHeaders,
         body: JSON.stringify({
           player: { data: playerAsset.dataUrl, mimeType: 'image/jpeg' },
           garments: garmentsPayload,
@@ -237,6 +247,7 @@ export default function App() {
           mode,
           aspectRatio: '3:4',
           variationsCount,
+          spaceId: userSpaceId || undefined,
         }),
       });
 
@@ -282,7 +293,19 @@ export default function App() {
 
         const detailMsg = data.error ||
           (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
-        console.error('[Look Generation Error]', { status: response.status, data });
+
+        const isExpectedNotice =
+          data.isQuotaExhausted ||
+          response.status === 429 ||
+          data.isAuthError ||
+          data.requiresCredentials ||
+          response.status === 401;
+
+        if (isExpectedNotice) {
+          console.warn('[Look Generation Status Notice]', { status: response.status, data });
+        } else {
+          console.error('[Look Generation Error]', { status: response.status, data });
+        }
         setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
         return;
       }

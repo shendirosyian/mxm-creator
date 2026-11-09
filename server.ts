@@ -68,6 +68,57 @@ app.all('/api/hf-diagnostic', netlifyAdapter(hfDiagnosticHandler));
 app.all('/.netlify/functions/gemini-diagnostic', netlifyAdapter(hfDiagnosticHandler));
 app.all('/api/gemini-diagnostic', netlifyAdapter(hfDiagnosticHandler));
 
+// Secure server-side endpoint to configure server environment variable HF_TOKEN (never exposed to client)
+app.post('/api/configure-server-token', async (req: Request, res: Response) => {
+  try {
+    const { token } = req.body || {};
+    if (!token || typeof token !== 'string' || !token.trim()) {
+      return res.status(400).json({ error: 'Token string is required.' });
+    }
+    const cleanToken = token.trim();
+    if (!cleanToken.startsWith('hf_')) {
+      return res.status(400).json({ error: 'Invalid format. Hugging Face tokens must start with "hf_".' });
+    }
+
+    // Verify token validity with Hugging Face whoami API
+    const whoamiResp = await fetch('https://huggingface.co/api/whoami-v2', {
+      headers: { Authorization: `Bearer ${cleanToken}` },
+    });
+
+    if (whoamiResp.status === 401 || whoamiResp.status === 403) {
+      return res.status(401).json({
+        error: 'Hugging Face rejected this token (HTTP 401 Unauthorized). Verify token permissions at https://huggingface.co/settings/tokens.',
+      });
+    }
+
+    // Set server process environment variable
+    process.env.HF_TOKEN = cleanToken;
+
+    // Persist to server .env file
+    const envPath = path.join(__dirname, '.env');
+    let envContent = '';
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, 'utf8');
+      if (/^HF_TOKEN=.*$/m.test(envContent)) {
+        envContent = envContent.replace(/^HF_TOKEN=.*$/m, `HF_TOKEN="${cleanToken}"`);
+      } else {
+        envContent += `\nHF_TOKEN="${cleanToken}"\n`;
+      }
+    } else {
+      envContent = `HF_TOKEN="${cleanToken}"\nHF_SPACE_ID="Nymbo/Virtual-Try-On"\n`;
+    }
+    fs.writeFileSync(envPath, envContent, 'utf8');
+
+    return res.json({
+      success: true,
+      tokenConfigured: true,
+      message: 'Server HF_TOKEN environment variable updated and verified with Hugging Face successfully.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update server environment' });
+  }
+});
+
 // 2. High-speed Smart Asset Analysis (instant local heuristics for Virtual Try-On)
 // 2. High-speed Smart Asset Analysis with Garment Intelligence
 app.post('/api/analyze-assets', async (req: Request, res: Response) => {
