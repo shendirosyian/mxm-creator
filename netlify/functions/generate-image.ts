@@ -72,13 +72,17 @@ export const handler: Handler = async (event: HandlerEvent) => {
     // Determine garment description text for the pipeline
     // Priority: user custom prompt > specific top garment name > fallback generic description
     const customPrompt = customization.customPrompt?.trim();
-    const topGarment = garmentList.find((g) => g.slot === 'shirt') || garmentList[0];
-    const garmentDescription = customPrompt || topGarment.name || 'Short Sleeve Round Neck T-shirt, natural fit';
+    const topGarment = garmentList.find((g) => g.slot === 'top' || g.slot === 'shirt') || garmentList[0];
+    const garmentDescription = customPrompt || topGarment.name || 'Fashion garment, natural fit';
+
+    console.log(`[Generate-Image] Job ${jobId} initialized: ${garmentList.length} garments staged. Selected master: ${topGarment.name} (${topGarment.slot})`);
 
     updateJob(jobId, {
       status: 'processing',
       stage: 'Connecting to Hugging Face ZeroGPU Space...',
     });
+
+    const startTime = Date.now();
 
     // Execute genuine Virtual Try-On via Hugging Face Space (Nymbo/Virtual-Try-On)
     const tryOnResult = await runVirtualTryOn({
@@ -95,6 +99,9 @@ export const handler: Handler = async (event: HandlerEvent) => {
         });
       },
     });
+
+    const durationMs = Date.now() - startTime;
+    console.log(`[Generate-Image] Job ${jobId} finished in ${durationMs}ms with success=${tryOnResult.success}`);
 
     if (!tryOnResult.success) {
       updateJob(jobId, {

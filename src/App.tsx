@@ -279,7 +279,11 @@ export default function App() {
         } else if (data.isQuotaExhausted || response.status === 429) {
           setIsQuotaError(true);
         }
-        setErrorNotice(data.error || 'Failed to generate visual look.');
+
+        const detailMsg = data.error ||
+          (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
+        console.error('[Look Generation Error]', { status: response.status, data });
+        setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
         return;
       }
 
