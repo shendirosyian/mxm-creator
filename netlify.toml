@@ -18,6 +18,16 @@
   status = 200
 
 [[redirects]]
+  from = "/api/generate-image-background"
+  to = "/.netlify/functions/generate-image-background"
+  status = 200
+
+[[redirects]]
+  from = "/api/get-job-result"
+  to = "/.netlify/functions/get-job-result"
+  status = 200
+
+[[redirects]]
   from = "/api/process-image"
   to = "/.netlify/functions/process-image"
   status = 200

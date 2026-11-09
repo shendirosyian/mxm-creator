@@ -1,6 +1,6 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
-import { runMultiCategoryTryOn } from './utils/multiCategoryPipeline';
-import { createJob, updateJob } from './utils/jobs';
+import { createAndStoreJob } from './utils/jobStorage';
+import { handler as backgroundHandler } from './generate-image-background';
 
 const defaultHeaders: Record<string, string> = {
   'Content-Type': 'application/json',
@@ -9,6 +9,15 @@ const defaultHeaders: Record<string, string> = {
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
 
+/**
+ * Job Creation & Asset Staging Endpoint for MXM CREATOR.
+ * 
+ * Asynchronous Architecture (Eliminates HTTP 504 Gateway Timeout):
+ * 1. Accepts full-resolution player photo and garment references.
+ * 2. Writes heavy images to private temporary server storage.
+ * 3. Dispatches background worker with lightweight `{ jobId }` payload (< 1KB).
+ * 4. Returns HTTP 202 Accepted immediately with unique jobId.
+ */
 export const handler: Handler = async (event: HandlerEvent) => {
   // CORS preflight
   if (event.httpMethod === 'OPTIONS') {
@@ -53,21 +62,18 @@ export const handler: Handler = async (event: HandlerEvent) => {
       };
     }
 
-    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    createJob(jobId);
-
-    // Extract staged garment assets
-    const garmentList: Array<{ slot: string; dataUrl: string; name?: string }> = [];
-
+    // Validate that at least one garment has been staged
+    let hasGarment = false;
     if (garments && typeof garments === 'object') {
-      for (const [slotKey, garment] of Object.entries(garments as Record<string, any>)) {
+      for (const garment of Object.values(garments as Record<string, any>)) {
         if (garment && garment.data) {
-          garmentList.push({ slot: slotKey, dataUrl: garment.data, name: garment.name });
+          hasGarment = true;
+          break;
         }
       }
     }
 
-    if (garmentList.length === 0) {
+    if (!hasGarment) {
       return {
         statusCode: 400,
         headers: defaultHeaders,
@@ -77,117 +83,71 @@ export const handler: Handler = async (event: HandlerEvent) => {
       };
     }
 
-    // Determine garment description text for the pipeline
-    // Priority: user custom prompt > specific top garment name > fallback generic description
-    const customPrompt = customization.customPrompt?.trim();
-    const topGarment = garmentList.find((g) => g.slot === 'top' || g.slot === 'shirt') || garmentList[0];
-    const garmentDescription = customPrompt || topGarment.name || 'Fashion garment, natural fit';
+    // 1. Generate unique, collision-resistant job ID
+    const jobId = `job_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
 
-    console.log(`[Generate-Image] Job ${jobId} initialized: ${garmentList.length} garments staged. Selected master: ${topGarment.name} (${topGarment.slot}) (Space: ${userSpaceId || 'default'})`);
-
-    updateJob(jobId, {
-      status: 'processing',
-      stage: 'Connecting to Hugging Face ZeroGPU Space...',
-    });
-
-    const startTime = Date.now();
-
-    // Execute genuine Multi-Category Virtual Styling Pipeline
-    const tryOnResult = await runMultiCategoryTryOn({
-      playerBase64: player.data,
-      garmentList,
-      customPrompt,
-      spaceId: userSpaceId || undefined,
-      onProgress: (info) => {
-        updateJob(jobId, {
-          status: 'processing',
-          stage: info.stage,
-          queuePosition: info.position,
-          queueMessage: info.message,
-          progress: info.progress,
-        });
-      },
-    });
-
-    const durationMs = Date.now() - startTime;
-    console.log(`[Generate-Image] Job ${jobId} finished in ${durationMs}ms with success=${tryOnResult.success}`);
-
-    if (!tryOnResult.success) {
-      updateJob(jobId, {
-        status: 'failed',
-        error: tryOnResult.error,
-        isQuotaExhausted: tryOnResult.isQuotaExhausted,
-        isAuthError: tryOnResult.isAuthError,
-        requiresCredentials: tryOnResult.requiresCredentials,
-      });
-
-      const statusCode = tryOnResult.isAuthError
-        ? 401
-        : tryOnResult.isQuotaExhausted
-        ? 429
-        : 500;
-
-      return {
-        statusCode,
-        headers: defaultHeaders,
-        body: JSON.stringify({
-          error: tryOnResult.error,
-          isQuotaExhausted: tryOnResult.isQuotaExhausted,
-          isAuthError: tryOnResult.isAuthError,
-          requiresCredentials: tryOnResult.requiresCredentials,
-          spaceUsed: tryOnResult.spaceUsed,
-          jobId,
-        }),
-      };
-    }
-
-    if (!tryOnResult.imageDataUrl) {
-      updateJob(jobId, { status: 'failed', error: 'No try-on image returned from ZeroGPU space.' });
-      return {
-        statusCode: 500,
-        headers: defaultHeaders,
-        body: JSON.stringify({ error: 'No image was returned by Hugging Face ZeroGPU.', jobId }),
-      };
-    }
-
-    const results = [
-      {
-        imageUrl: tryOnResult.imageDataUrl,
-        index: 0,
-        label: 'Virtual Try-On Look',
-      },
-    ];
-
-    const jobResult = {
-      images: results,
-      primaryImage: results[0].imageUrl,
-      maskedImage: tryOnResult.maskedImageDataUrl,
+    // 2. Persist heavy Base64 payload to private temporary server storage
+    createAndStoreJob(jobId, {
+      player,
+      garments: garments || {},
+      customization,
       mode,
       aspectRatio,
-      warnings: tryOnResult.warnings,
-      garmentStatus: tryOnResult.garmentStatus,
-    };
-
-    updateJob(jobId, {
-      status: 'completed',
-      result: jobResult,
+      spaceId: userSpaceId || undefined,
     });
 
+    console.log(`[Job Creation] Job ${jobId} created and staged to server temporary storage. Triggering background worker...`);
+
+    // 3. Trigger Netlify Background Worker with minimal payload (< 1KB)
+    // Attempt HTTP trigger for Netlify Background Functions infrastructure
+    const host = event.headers?.host || event.headers?.Host;
+    const proto = event.headers?.['x-forwarded-proto'] || 'https';
+    if (host) {
+      const backgroundUrl = `${proto}://${host}/.netlify/functions/generate-image-background`;
+      fetch(backgroundUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobId }),
+      }).catch((fetchErr) => {
+        // Non-blocking trigger notice (fallback in-process runner ensures execution)
+        console.warn(`[Job Creation] Remote background trigger notice for ${jobId}:`, fetchErr?.message || fetchErr);
+      });
+    }
+
+    // In-process asynchronous dispatch to ensure job execution in all runtimes (local dev server, Node, etc.)
+    setImmediate(async () => {
+      try {
+        await backgroundHandler(
+          {
+            httpMethod: 'POST',
+            headers: defaultHeaders,
+            body: JSON.stringify({ jobId }),
+          } as HandlerEvent,
+          {} as any
+        );
+      } catch (bgErr: any) {
+        console.error(`[Job Creation] In-process background handler error for ${jobId}:`, bgErr?.message || bgErr);
+      }
+    });
+
+    // 4. Return HTTP 202 Accepted immediately to client
     return {
-      statusCode: 200,
+      statusCode: 202,
       headers: defaultHeaders,
       body: JSON.stringify({
         success: true,
         jobId,
-        status: 'completed',
-        ...jobResult,
+        status: 'queued',
+        stage: 'Queued for background virtual try-on...',
+        message: 'Job created. Background processing initiated.',
       }),
     };
   } catch (err: any) {
+    console.error('[Job Creation Error]', err);
     return {
       statusCode: 500,
       headers: defaultHeaders,
-      body: JSON.stringify({ error: err?.message || 'Server error during virtual try-on processing.' }),
+      body: JSON.stringify({ error: err?.message || 'Server error creating virtual try-on job.' }),
     };
   }
 };

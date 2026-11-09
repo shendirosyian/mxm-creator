@@ -258,33 +258,56 @@ export default function App() {
         data = { error: `Server returned HTTP ${response.status}` };
       }
 
-      // If asynchronous job processing is returned, poll check-job
-      if (response.ok && data.jobId && (data.status === 'pending' || data.status === 'processing')) {
+      // Asynchronous Background Processing: Handle HTTP 202 and queued/processing jobs
+      if ((response.status === 202 || response.ok) && data.jobId && data.status !== 'completed') {
         let attempts = 0;
-        const maxAttempts = 60; // Up to 60 polling intervals
+        const maxAttempts = 240; // 240 attempts * 2.5s = 600s (10 minutes)
+        let isComplete = false;
+
         while (attempts < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 1200));
+          await new Promise((r) => setTimeout(r, 2500));
           const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
           if (checkResp.ok) {
             const checkData = await checkResp.json();
             if (checkData.stage) {
               setGeneratingStage(checkData.stage);
             }
-            if (checkData.status === 'completed' && checkData.result) {
-              data = { ...checkData.result, success: true };
-              break;
+            if (checkData.status === 'completed') {
+              if (checkData.result && checkData.result.images?.length) {
+                data = { ...checkData.result, success: true };
+                isComplete = true;
+                break;
+              } else {
+                // Secondary check via get-job-result
+                const resultResp = await fetch(`/.netlify/functions/get-job-result?jobId=${data.jobId}`);
+                if (resultResp.ok) {
+                  const resultData = await resultResp.json();
+                  if (resultData.images?.length) {
+                    data = { ...resultData, success: true };
+                    isComplete = true;
+                    break;
+                  }
+                }
+              }
             } else if (checkData.status === 'failed') {
               if (checkData.requiresCredentials) setRequiresCredentials(true);
               if (checkData.isQuotaExhausted) setIsQuotaError(true);
-              setErrorNotice(checkData.error || 'Generation failed.');
+              setErrorNotice(checkData.error || 'Virtual Try-On generation failed.');
+              setIsGenerating(false);
               return;
             }
           }
           attempts++;
         }
+
+        if (!isComplete && (!data.images || data.images.length === 0)) {
+          setErrorNotice('Virtual Try-On timed out waiting for Hugging Face ZeroGPU queue. Please retry.');
+          setIsGenerating(false);
+          return;
+        }
       }
 
-      if (!response.ok || !data.images || data.images.length === 0) {
+      if ((!response.ok && response.status !== 202) || !data.images || data.images.length === 0) {
         if (data.requiresCredentials || response.status === 401) {
           setRequiresCredentials(true);
         } else if (data.isQuotaExhausted || response.status === 429) {
@@ -307,6 +330,7 @@ export default function App() {
           console.error('[Look Generation Error]', { status: response.status, data });
         }
         setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
+        setIsGenerating(false);
         return;
       }
 

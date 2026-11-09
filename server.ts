@@ -5,7 +5,9 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { handler as generateImageHandler } from './netlify/functions/generate-image';
+import { handler as generateImageBackgroundHandler } from './netlify/functions/generate-image-background';
 import { handler as checkJobHandler } from './netlify/functions/check-job';
+import { handler as getJobResultHandler } from './netlify/functions/get-job-result';
 import { handler as processImageHandler } from './netlify/functions/process-image';
 import { handler as exportImageHandler } from './netlify/functions/export-image';
 import { handler as hfDiagnosticHandler } from './netlify/functions/hf-diagnostic';
@@ -48,13 +50,46 @@ function netlifyAdapter(handler: any) {
   };
 }
 
+// Helper to simulate Netlify Background Function execution in dev server
+function netlifyBackgroundAdapter(handler: any) {
+  return async (req: Request, res: Response) => {
+    // Return HTTP 202 Accepted immediately to the client
+    res.status(202).json({
+      success: true,
+      message: 'Background processing initiated.',
+    });
+
+    // Execute background worker asynchronously without blocking caller
+    setImmediate(async () => {
+      try {
+        const event = {
+          httpMethod: req.method,
+          headers: req.headers as any,
+          queryStringParameters: req.query as any,
+          body: typeof req.body === 'string' ? req.body : JSON.stringify(req.body),
+          path: req.path,
+        };
+        await handler(event, {} as any);
+      } catch (err: any) {
+        console.error('[Background Worker Error]', err?.message || err);
+      }
+    });
+  };
+}
+
 // 1. Mount Netlify Functions routes for local dev (both /.netlify/functions/ and /api/)
 app.all('/.netlify/functions/generate-image', netlifyAdapter(generateImageHandler));
 app.all('/api/generate-image', netlifyAdapter(generateImageHandler));
 app.all('/api/generate-look', netlifyAdapter(generateImageHandler)); // legacy alias
 
+app.all('/.netlify/functions/generate-image-background', netlifyBackgroundAdapter(generateImageBackgroundHandler));
+app.all('/api/generate-image-background', netlifyBackgroundAdapter(generateImageBackgroundHandler));
+
 app.all('/.netlify/functions/check-job', netlifyAdapter(checkJobHandler));
 app.all('/api/check-job', netlifyAdapter(checkJobHandler));
+
+app.all('/.netlify/functions/get-job-result', netlifyAdapter(getJobResultHandler));
+app.all('/api/get-job-result', netlifyAdapter(getJobResultHandler));
 
 app.all('/.netlify/functions/process-image', netlifyAdapter(processImageHandler));
 app.all('/api/process-image', netlifyAdapter(processImageHandler));
