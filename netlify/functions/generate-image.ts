@@ -1,5 +1,5 @@
 import type { Handler, HandlerEvent } from '@netlify/functions';
-import { runVirtualTryOn } from './utils/huggingface';
+import { runMultiCategoryTryOn } from './utils/multiCategoryPipeline';
 import { createJob, updateJob } from './utils/jobs';
 
 const defaultHeaders: Record<string, string> = {
@@ -92,11 +92,11 @@ export const handler: Handler = async (event: HandlerEvent) => {
 
     const startTime = Date.now();
 
-    // Execute genuine Virtual Try-On via Hugging Face Space (Nymbo/Virtual-Try-On)
-    const tryOnResult = await runVirtualTryOn({
+    // Execute genuine Multi-Category Virtual Styling Pipeline
+    const tryOnResult = await runMultiCategoryTryOn({
       playerBase64: player.data,
       garmentList,
-      garmentDescription,
+      customPrompt,
       spaceId: userSpaceId || undefined,
       onProgress: (info) => {
         updateJob(jobId, {

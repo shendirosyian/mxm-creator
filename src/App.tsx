@@ -62,7 +62,7 @@ export default function App() {
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [errorNotice, setErrorNotice] = useState<string | null>(null);
   const [pipelineWarnings, setPipelineWarnings] = useState<string[]>([]);
-  const [garmentStatusMap, setGarmentStatusMap] = useState<Record<string, { applied: boolean; note: string }>>({});
+  const [garmentStatusMap, setGarmentStatusMap] = useState<Record<string, { applied: boolean; model?: string; note: string }>>({});
   const [isQuotaError, setIsQuotaError] = useState<boolean>(false);
   const [requiresCredentials, setRequiresCredentials] = useState<boolean>(false);
 

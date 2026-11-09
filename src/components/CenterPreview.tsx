@@ -27,7 +27,7 @@ interface CenterPreviewProps {
   isGenerating: boolean;
   generatingStage?: string;
   pipelineWarnings?: string[];
-  garmentStatusMap?: Record<string, { applied: boolean; note: string }>;
+  garmentStatusMap?: Record<string, { applied: boolean; model?: string; note: string }>;
   onOpenExport: () => void;
   onOpenBrushTool?: () => void;
   hasMask?: boolean;
@@ -668,15 +668,20 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
               {Object.entries(garmentStatusMap).map(([slot, stat]) => (
                 <span
                   key={slot}
-                  className={`inline-flex items-center gap-1 rounded-sm px-2 py-0.5 font-mono text-[10px] border ${
+                  className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] border ${
                     stat.applied
                       ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
                       : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                   }`}
                   title={stat.note}
                 >
-                  <span className="uppercase font-bold">{slot}</span>
+                  <span className="uppercase font-bold">{slot}:</span>
                   <span>{stat.applied ? '✓ Applied' : 'Preserved'}</span>
+                  {stat.model && (
+                    <span className="text-[9px] text-neutral-400">
+                      ({stat.model.includes('/') ? stat.model.split('/')[1] : stat.model})
+                    </span>
+                  )}
                 </span>
               ))}
             </div>
