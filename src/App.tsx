@@ -782,6 +782,7 @@ export default function App() {
           transparentImage={currentTransparentImage || undefined}
           shadowImage={currentShadowImage || undefined}
           projectName={playerAsset?.fileName ? playerAsset.fileName.replace(/\.[^/.]+$/, '') : 'mxm_look'}
+          batchVariations={variations}
         />
       )}
 

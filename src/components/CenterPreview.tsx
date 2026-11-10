@@ -657,41 +657,112 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
         )}
       </div>
 
-      {/* Quality Control & Garment Replacement Status Strip */}
-      {generatedImage && (Object.keys(garmentStatusMap).length > 0 || pipelineWarnings.length > 0) && (
-        <div className="border-t border-white/[0.06] bg-[#121417] px-4 py-2 text-xs">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+      {/* Quality Control & Pipeline Verification Strip */}
+      {generatedImage && (
+        <div className="border-t border-white/[0.08] bg-[#121417] px-4 py-2.5 text-xs">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] uppercase font-semibold text-neutral-400 tracking-wider mr-1">
-                Outfit Status:
+              <span className="text-[10px] uppercase font-bold text-neutral-400 tracking-wider mr-1 flex items-center gap-1">
+                <Sparkles className="h-3 w-3 text-[#00e599]" />
+                <span>Quality Control:</span>
               </span>
-              {Object.entries(garmentStatusMap).map(([slot, stat]) => (
-                <span
-                  key={slot}
-                  className={`inline-flex items-center gap-1.5 rounded-sm px-2 py-0.5 font-mono text-[10px] border ${
-                    stat.applied
-                      ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
-                      : 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                  }`}
-                  title={stat.note}
-                >
-                  <span className="uppercase font-bold">{slot}:</span>
-                  <span>{stat.applied ? '✓ Applied' : 'Unsupported (Model Pending)'}</span>
-                  {stat.model && (
-                    <span className="text-[9px] text-neutral-400">
-                      ({stat.model.includes('/') ? stat.model.split('/')[1] : stat.model})
-                    </span>
-                  )}
-                </span>
-              ))}
+
+              {/* TOP */}
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
+                  garmentStatusMap.top?.applied
+                    ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.top
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+                    : 'border-white/10 bg-[#16181b] text-neutral-500'
+                }`}
+                title={garmentStatusMap.top?.note || 'Upper-body IDM-VTON transformation'}
+              >
+                <span className="font-bold">TOP:</span>
+                <span>{garmentStatusMap.top ? (garmentStatusMap.top.applied ? '✓ Applied (IDM-VTON)' : 'Failed') : 'Inactive'}</span>
+              </span>
+
+              {/* PANTS */}
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
+                  garmentStatusMap.pants?.applied
+                    ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.pants
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    : 'border-white/10 bg-[#16181b] text-neutral-500'
+                }`}
+                title={garmentStatusMap.pants?.note || 'Lower-body OOTDiffusion transformation'}
+              >
+                <span className="font-bold">PANTS:</span>
+                <span>{garmentStatusMap.pants ? (garmentStatusMap.pants.applied ? '✓ Applied (OOTDiff)' : 'Model Pending') : 'Inactive'}</span>
+              </span>
+
+              {/* SHOES */}
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
+                  garmentStatusMap.shoes?.applied
+                    ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.shoes
+                    ? 'border-neutral-700 bg-neutral-800/60 text-neutral-400'
+                    : 'border-white/10 bg-[#16181b] text-neutral-500'
+                }`}
+                title="Specialized footwear AI space pending"
+              >
+                <span className="font-bold">SHOES:</span>
+                <span>{garmentStatusMap.shoes ? (garmentStatusMap.shoes.applied ? '✓ Applied' : 'Unsupported') : 'Inactive'}</span>
+              </span>
+
+              {/* ACCESSORIES */}
+              <span
+                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
+                  garmentStatusMap.accessories?.applied
+                    ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.accessories
+                    ? 'border-neutral-700 bg-neutral-800/60 text-neutral-400'
+                    : 'border-white/10 bg-[#16181b] text-neutral-500'
+                }`}
+                title="Specialized accessories AI space pending"
+              >
+                <span className="font-bold">ACCESSORIES:</span>
+                <span>{garmentStatusMap.accessories ? (garmentStatusMap.accessories.applied ? '✓ Applied' : 'Unsupported') : 'Inactive'}</span>
+              </span>
+
+              {/* UPSCALE STAGE */}
+              <span
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border border-[#00e599]/30 bg-[#00e599]/5 text-[#00e599]"
+                title="Lanczos/Bicubic multi-pass upscaling to 2048px/3072px/4096px ready"
+              >
+                <span className="font-bold">UPSCALE:</span>
+                <span>2K/4K Ready</span>
+              </span>
+
+              {/* EXPORT STAGE */}
+              <span
+                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border border-white/20 bg-white/5 text-neutral-300"
+                title="PNG / JPG / Multi-person ZIP export available"
+              >
+                <span className="font-bold">EXPORT:</span>
+                <span>PNG / ZIP Ready</span>
+              </span>
             </div>
 
-            {pipelineWarnings.length > 0 && (
-              <div className="flex items-center gap-1 text-[11px] text-amber-400 font-medium">
-                <span className="text-[10px]">ℹ</span>
-                <span className="line-clamp-1">{pipelineWarnings[0]}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              {pipelineWarnings.length > 0 && (
+                <span className="text-[10px] text-amber-400 font-mono line-clamp-1" title={pipelineWarnings[0]}>
+                  {pipelineWarnings[0]}
+                </span>
+              )}
+              {onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  disabled={isGenerating}
+                  className="rounded border border-white/10 bg-[#1a1d21] px-2 py-0.5 text-[10px] font-medium text-neutral-300 hover:text-white hover:border-white/20 transition-colors"
+                >
+                  Retry Look
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

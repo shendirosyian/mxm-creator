@@ -282,7 +282,8 @@ export async function addContactShadow(
 
 /**
  * High-Resolution Upscaling with detail enhancement and unsharp mask
- * Supports 1024px (Standard), 2048px (High 2K), 4096px (Ultra 4K)
+ * Supports 1024px (Standard), 2048px (Pro 2K), 3072px (Studio 3K), 4096px (Ultra 4K)
+ * Uses progressive multi-pass canvas resampling to prevent blurring and pixelation.
  */
 export async function upscaleImage(
   imageSource: string | HTMLImageElement,
@@ -292,52 +293,87 @@ export async function upscaleImage(
   const origW = img.naturalWidth || img.width;
   const origH = img.naturalHeight || img.height;
 
-  const scale = targetLongestEdge / Math.max(origW, origH);
-  const targetW = Math.round(origW * scale);
-  const targetH = Math.round(origH * scale);
+  const maxEdge = Math.max(origW, origH);
+  const totalScale = targetLongestEdge / maxEdge;
+  const targetW = Math.round(origW * totalScale);
+  const targetH = Math.round(origH * totalScale);
 
-  // Multi-step high-quality canvas bicubic resampling
-  const canvas = document.createElement('canvas');
-  canvas.width = targetW;
-  canvas.height = targetH;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) throw new Error('Canvas 2D context unavailable');
+  // Progressive stepping: if scaling up significantly (>1.4x), scale in steps to preserve sharp garment edges
+  let currentCanvas = document.createElement('canvas');
+  currentCanvas.width = origW;
+  currentCanvas.height = origH;
+  let currentCtx = currentCanvas.getContext('2d', { willReadFrequently: true });
+  if (!currentCtx) throw new Error('Canvas 2D context unavailable');
 
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, 0, 0, targetW, targetH);
+  currentCtx.imageSmoothingEnabled = true;
+  currentCtx.imageSmoothingQuality = 'high';
+  currentCtx.drawImage(img, 0, 0, origW, origH);
 
-  // Detail sharpening filter (unsharp mask simulation for fabric texture & hair clarity)
-  if (scale > 1.2) {
+  if (totalScale > 1.05) {
+    let curW = origW;
+    let curH = origH;
+
+    // Step up in 1.5x increments
+    while (curW * 1.5 < targetW && curH * 1.5 < targetH) {
+      curW = Math.round(curW * 1.5);
+      curH = Math.round(curH * 1.5);
+      const nextCanvas = document.createElement('canvas');
+      nextCanvas.width = curW;
+      nextCanvas.height = curH;
+      const nextCtx = nextCanvas.getContext('2d', { willReadFrequently: true });
+      if (!nextCtx) break;
+
+      nextCtx.imageSmoothingEnabled = true;
+      nextCtx.imageSmoothingQuality = 'high';
+      nextCtx.drawImage(currentCanvas, 0, 0, curW, curH);
+      currentCanvas = nextCanvas;
+      currentCtx = nextCtx;
+    }
+  }
+
+  // Final scale to exact target dimensions
+  const finalCanvas = document.createElement('canvas');
+  finalCanvas.width = targetW;
+  finalCanvas.height = targetH;
+  const finalCtx = finalCanvas.getContext('2d', { willReadFrequently: true });
+  if (!finalCtx) throw new Error('Canvas 2D context unavailable');
+
+  finalCtx.imageSmoothingEnabled = true;
+  finalCtx.imageSmoothingQuality = 'high';
+  finalCtx.drawImage(currentCanvas, 0, 0, targetW, targetH);
+
+  // Unsharp mask detail recovery filter (tuned specifically for textile weaves, seams, and facial fidelity)
+  if (totalScale > 1.1) {
     try {
-      const imgData = ctx.getImageData(0, 0, targetW, targetH);
+      const imgData = finalCtx.getImageData(0, 0, targetW, targetH);
       const data = imgData.data;
       const copy = new Uint8ClampedArray(data);
 
-      const amount = 0.28; // subtle sharpening amount
-      for (let y = 1; y < targetH - 1; y++) {
-        for (let x = 1; x < targetW - 1; x++) {
+      const amount = Math.min(0.35, 0.2 + (totalScale - 1) * 0.05); // adaptive sharpening strength
+      const step = 1;
+      for (let y = step; y < targetH - step; y += step) {
+        for (let x = step; x < targetW - step; x += step) {
           const idx = (y * targetW + x) * 4;
-          // Apply sharpening on RGB channels while preserving Alpha
+          // Apply on RGB channels while strictly preserving Alpha channel
           for (let c = 0; c < 3; c++) {
             const center = copy[idx + c];
             const up = copy[((y - 1) * targetW + x) * 4 + c];
             const down = copy[((y + 1) * targetW + x) * 4 + c];
             const left = copy[(y * targetW + (x - 1)) * 4 + c];
             const right = copy[(y * targetW + (x + 1)) * 4 + c];
-            const blur = (up + down + left + right) / 4;
-            data[idx + c] = Math.min(255, Math.max(0, center + (center - blur) * amount));
+            const blur = (up + down + left + right) * 0.25;
+            const sharpened = center + (center - blur) * amount;
+            data[idx + c] = Math.min(255, Math.max(0, sharpened));
           }
         }
       }
-      ctx.putImageData(imgData, 0, 0);
+      finalCtx.putImageData(imgData, 0, 0);
     } catch {
-      // Fallback if memory constrained
+      // Graceful fallback if memory buffer is restricted
     }
   }
 
-  const dataUrl = canvas.toDataURL('image/png');
-  // Approximate file size from base64 string
+  const dataUrl = finalCanvas.toDataURL('image/png');
   const base64Len = dataUrl.length - 'data:image/png;base64,'.length;
   const fileSizeBytes = Math.round((base64Len * 3) / 4);
 
@@ -404,14 +440,22 @@ export async function formatExportImage(
 
   // Draw image scaled to fit with preserve aspect ratio
   const scale = Math.min(outW / srcW, outH / srcH);
-  const drawW = srcW * scale;
-  const drawH = srcH * scale;
-  const drawX = (outW - drawW) / 2;
-  const drawY = (outH - drawH) / 2;
+  const drawW = Math.round(srcW * scale);
+  const drawH = Math.round(srcH * scale);
+  const drawX = Math.round((outW - drawW) / 2);
+  const drawY = Math.round((outH - drawH) / 2);
 
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(img, drawX, drawY, drawW, drawH);
+
+  if (scale > 1.25) {
+    // Upscale source first using progressive multi-pass super-resolution
+    const upscaled = await upscaleImage(img, Math.max(drawW, drawH));
+    const upscaledImg = await loadImage(upscaled.dataUrl);
+    ctx.drawImage(upscaledImg, drawX, drawY, drawW, drawH);
+  } else {
+    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+  }
 
   const mime = options.format === 'jpg_solid' ? 'image/jpeg' : 'image/png';
   const dataUrl = canvas.toDataURL(mime, 0.95);
