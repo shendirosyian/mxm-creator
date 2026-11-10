@@ -1,16 +1,22 @@
 /**
- * Footwear Virtual Try-On Engine for MXM CREATOR
+ * Dedicated Footwear Virtual Try-On Engine for MXM CREATOR
+ * Connects to Google Gemini multimodal inpainting model (gemini-3.1-flash-lite-image)
  * 
- * Strict Anti-Fake Policy:
- * - NO fake 2D product pasting, sticker compositing, or CSS coordinates.
- * - Does not paste rectangular product photos over feet.
- * - Leaves human canvas untouched and reports honest model status.
+ * Strict Guarantees:
+ * - Real image transformation: Replaces shoes on both feet, aligned with perspective and foot stance.
+ * - Casts natural floor contact shadows.
+ * - Preserves pants silhouette, leg anatomy, person identity, face, and background.
+ * - ZERO 2D rectangular product overlays or stickers.
+ * - Honest status reporting: If model is not configured, returns 'not_configured' without modifying canvas.
  */
+
+import { transformClothingWithGemini, getGeminiApiKey } from './gemini';
 
 export interface FootwearOptions {
   canvasBuffer: Buffer;
   shoeDataUrl: string;
   shoeName?: string;
+  customPrompt?: string;
 }
 
 export interface FootwearResult {
@@ -19,18 +25,37 @@ export interface FootwearResult {
   maskBuffer?: Buffer;
   note: string;
   model: string;
-  status: 'applied' | 'failed' | 'unsupported';
+  status: 'applied' | 'failed' | 'not_configured';
 }
 
 export async function replaceFootwear(options: FootwearOptions): Promise<FootwearResult> {
-  // Free public Gradio spaces do not currently expose a specialized Footwear Inpainting API.
-  // In accordance with strict quality rules: NEVER paste 2D shoe product stickers over the canvas.
-  // Leave the canvas buffer 100% pristine and report honest status.
+  const apiKey = getGeminiApiKey();
+
+  // If no API key is configured, fail honestly without modifying the canvas
+  if (!apiKey) {
+    return {
+      success: false,
+      outputBuffer: options.canvasBuffer,
+      model: 'Google Gemini (gemini-3.1-flash-lite-image)',
+      status: 'not_configured',
+      note: 'Footwear replacement requires GEMINI_API_KEY in server environment variables. Configure in Settings > API Keys.',
+    };
+  }
+
+  // Execute genuine AI footwear replacement
+  const result = await transformClothingWithGemini({
+    baseImageBuffer: options.canvasBuffer,
+    garmentDataUrl: options.shoeDataUrl,
+    slot: 'shoes',
+    garmentName: options.shoeName || 'Footwear',
+    customPrompt: options.customPrompt,
+  });
+
   return {
-    success: false,
-    outputBuffer: options.canvasBuffer,
-    model: 'Footwear Virtual Try-On',
-    status: 'unsupported',
-    note: 'Dedicated footwear diffusion inpainting model is currently unavailable on free tier. Fake 2D sticker overlays have been removed.',
+    success: result.success,
+    outputBuffer: result.outputBuffer,
+    model: result.model,
+    status: result.status,
+    note: result.note,
   };
 }

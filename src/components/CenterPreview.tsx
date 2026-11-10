@@ -27,7 +27,7 @@ interface CenterPreviewProps {
   isGenerating: boolean;
   generatingStage?: string;
   pipelineWarnings?: string[];
-  garmentStatusMap?: Record<string, { applied: boolean; model?: string; note: string }>;
+  garmentStatusMap?: Record<string, { applied: boolean; model?: string; note: string; status?: 'applied' | 'failed' | 'not_configured' | 'unsupported' | 'pending' }>;
   onOpenExport: () => void;
   onOpenBrushTool?: () => void;
   hasMask?: boolean;
@@ -672,14 +672,29 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.top?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.top?.status === 'not_configured'
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.top
                     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
                 }`}
-                title={garmentStatusMap.top?.note || 'Upper-body IDM-VTON transformation'}
+                title={garmentStatusMap.top?.note || 'Upper-body virtual try-on'}
               >
                 <span className="font-bold">TOP:</span>
-                <span>{garmentStatusMap.top ? (garmentStatusMap.top.applied ? '✓ Applied (IDM-VTON)' : 'Failed') : 'Inactive'}</span>
+                <span>
+                  {garmentStatusMap.top
+                    ? garmentStatusMap.top.applied
+                      ? '✓ Applied'
+                      : garmentStatusMap.top.status === 'not_configured'
+                      ? 'Not Configured'
+                      : 'Failed'
+                    : 'Inactive'}
+                </span>
+                {garmentStatusMap.top?.applied && garmentStatusMap.top.model && (
+                  <span className="text-[9px] text-[#00e599]/70">
+                    ({garmentStatusMap.top.model.includes('/') ? garmentStatusMap.top.model.split('/')[1] : 'Gemini'})
+                  </span>
+                )}
               </span>
 
               {/* PANTS */}
@@ -687,14 +702,29 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.pants?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
-                    : garmentStatusMap.pants
+                    : garmentStatusMap.pants?.status === 'not_configured'
                     ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    : garmentStatusMap.pants
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
                 }`}
-                title={garmentStatusMap.pants?.note || 'Lower-body OOTDiffusion transformation'}
+                title={garmentStatusMap.pants?.note || 'Lower-body virtual try-on'}
               >
                 <span className="font-bold">PANTS:</span>
-                <span>{garmentStatusMap.pants ? (garmentStatusMap.pants.applied ? '✓ Applied (OOTDiff)' : 'Model Pending') : 'Inactive'}</span>
+                <span>
+                  {garmentStatusMap.pants
+                    ? garmentStatusMap.pants.applied
+                      ? '✓ Applied'
+                      : garmentStatusMap.pants.status === 'not_configured'
+                      ? 'Not Configured'
+                      : 'Failed'
+                    : 'Inactive'}
+                </span>
+                {garmentStatusMap.pants?.applied && garmentStatusMap.pants.model && (
+                  <span className="text-[9px] text-[#00e599]/70">
+                    ({garmentStatusMap.pants.model.includes('OOT') ? 'OOTDiff' : 'Gemini'})
+                  </span>
+                )}
               </span>
 
               {/* SHOES */}
@@ -702,14 +732,27 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.shoes?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.shoes?.status === 'not_configured'
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.shoes
-                    ? 'border-neutral-700 bg-neutral-800/60 text-neutral-400'
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
                 }`}
-                title="Specialized footwear AI space pending"
+                title={garmentStatusMap.shoes?.note || 'Footwear virtual replacement'}
               >
                 <span className="font-bold">SHOES:</span>
-                <span>{garmentStatusMap.shoes ? (garmentStatusMap.shoes.applied ? '✓ Applied' : 'Unsupported') : 'Inactive'}</span>
+                <span>
+                  {garmentStatusMap.shoes
+                    ? garmentStatusMap.shoes.applied
+                      ? '✓ Applied'
+                      : garmentStatusMap.shoes.status === 'not_configured'
+                      ? 'Model Not Configured'
+                      : 'Failed'
+                    : 'Inactive'}
+                </span>
+                {garmentStatusMap.shoes?.applied && (
+                  <span className="text-[9px] text-[#00e599]/70">(Gemini)</span>
+                )}
               </span>
 
               {/* ACCESSORIES */}
@@ -717,14 +760,27 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.accessories?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.accessories?.status === 'not_configured'
+                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.accessories
-                    ? 'border-neutral-700 bg-neutral-800/60 text-neutral-400'
+                    ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
                 }`}
-                title="Specialized accessories AI space pending"
+                title={garmentStatusMap.accessories?.note || 'Accessory landmark placement'}
               >
                 <span className="font-bold">ACCESSORIES:</span>
-                <span>{garmentStatusMap.accessories ? (garmentStatusMap.accessories.applied ? '✓ Applied' : 'Unsupported') : 'Inactive'}</span>
+                <span>
+                  {garmentStatusMap.accessories
+                    ? garmentStatusMap.accessories.applied
+                      ? '✓ Applied'
+                      : garmentStatusMap.accessories.status === 'not_configured'
+                      ? 'Model Not Configured'
+                      : 'Failed'
+                    : 'Inactive'}
+                </span>
+                {garmentStatusMap.accessories?.applied && (
+                  <span className="text-[9px] text-[#00e599]/70">(Gemini)</span>
+                )}
               </span>
 
               {/* UPSCALE STAGE */}

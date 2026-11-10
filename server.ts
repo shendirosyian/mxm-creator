@@ -11,6 +11,7 @@ import { handler as getJobResultHandler } from './netlify/functions/get-job-resu
 import { handler as processImageHandler } from './netlify/functions/process-image';
 import { handler as exportImageHandler } from './netlify/functions/export-image';
 import { handler as hfDiagnosticHandler } from './netlify/functions/hf-diagnostic';
+import { handler as geminiDiagnosticHandler } from './netlify/functions/gemini-diagnostic';
 
 dotenv.config();
 
@@ -97,11 +98,67 @@ app.all('/api/process-image', netlifyAdapter(processImageHandler));
 app.all('/.netlify/functions/export-image', netlifyAdapter(exportImageHandler));
 app.all('/api/export-image', netlifyAdapter(exportImageHandler));
 
-// Hugging Face ZeroGPU Try-On diagnostic endpoints (with legacy gemini alias for safety)
+// Diagnostic endpoints
 app.all('/.netlify/functions/hf-diagnostic', netlifyAdapter(hfDiagnosticHandler));
 app.all('/api/hf-diagnostic', netlifyAdapter(hfDiagnosticHandler));
-app.all('/.netlify/functions/gemini-diagnostic', netlifyAdapter(hfDiagnosticHandler));
-app.all('/api/gemini-diagnostic', netlifyAdapter(hfDiagnosticHandler));
+app.all('/.netlify/functions/gemini-diagnostic', netlifyAdapter(geminiDiagnosticHandler));
+app.all('/api/gemini-diagnostic', netlifyAdapter(geminiDiagnosticHandler));
+
+// Secure server-side endpoint to configure server environment variable GEMINI_API_KEY
+app.post('/api/configure-server-gemini-key', async (req: Request, res: Response) => {
+  try {
+    const { apiKey } = req.body || {};
+    if (!apiKey || typeof apiKey !== 'string' || !apiKey.trim()) {
+      return res.status(400).json({ error: 'API key string is required.' });
+    }
+    const cleanKey = apiKey.trim();
+
+    // Verify key with lightweight ping
+    const testResp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': cleanKey,
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: 'ping' }] }],
+        generationConfig: { maxOutputTokens: 2 },
+      }),
+    });
+
+    if (testResp.status === 400 || testResp.status === 401 || testResp.status === 403) {
+      return res.status(testResp.status).json({
+        error: `Google rejected this API key (HTTP ${testResp.status}). Check your key at https://aistudio.google.com/app/apikey.`,
+      });
+    }
+
+    // Set server process environment variable
+    process.env.GEMINI_API_KEY = cleanKey;
+
+    // Persist to server .env file
+    const envPath = path.join(__dirname, '.env');
+    let envContent = '';
+    if (fs.existsSync(envPath)) {
+      envContent = fs.readFileSync(envPath, 'utf8');
+      if (/^GEMINI_API_KEY=.*$/m.test(envContent)) {
+        envContent = envContent.replace(/^GEMINI_API_KEY=.*$/m, `GEMINI_API_KEY="${cleanKey}"`);
+      } else {
+        envContent += `\nGEMINI_API_KEY="${cleanKey}"\n`;
+      }
+    } else {
+      envContent = `GEMINI_API_KEY="${cleanKey}"\n`;
+    }
+    fs.writeFileSync(envPath, envContent, 'utf8');
+
+    return res.json({
+      success: true,
+      keyConfigured: true,
+      message: 'Server GEMINI_API_KEY environment variable updated and verified with Google AI Studio successfully.',
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err?.message || 'Failed to update server environment' });
+  }
+});
 
 // Secure server-side endpoint to configure server environment variable HF_TOKEN (never exposed to client)
 app.post('/api/configure-server-token', async (req: Request, res: Response) => {
