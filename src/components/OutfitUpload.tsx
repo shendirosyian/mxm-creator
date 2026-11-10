@@ -26,7 +26,7 @@ const SLOTS: SlotConfig[] = [
     icon: Shirt,
     hint: 'Tee, jacket, shirt, hoodie',
     isSupportedNow: true,
-    statusBadge: 'Active Try-On',
+    statusBadge: 'Active (IDM-VTON)',
   },
   {
     id: 'pants',
@@ -34,23 +34,23 @@ const SLOTS: SlotConfig[] = [
     icon: Layers,
     hint: 'Jeans, cargo, shorts, trousers',
     isSupportedNow: true,
-    statusBadge: 'Active Try-On',
+    statusBadge: 'Active (OOTDiffusion)',
   },
   {
     id: 'shoes',
     label: 'Shoes / Footwear',
     icon: Footprints,
     hint: 'Sneakers, boots, shoes',
-    isSupportedNow: true,
-    statusBadge: 'Active Try-On',
+    isSupportedNow: false,
+    statusBadge: 'Unsupported (Model Pending)',
   },
   {
     id: 'accessories',
     label: 'Accessories',
     icon: Watch,
     hint: 'Caps, hats, eyewear, glasses',
-    isSupportedNow: true,
-    statusBadge: 'Active Try-On',
+    isSupportedNow: false,
+    statusBadge: 'Unsupported (Model Pending)',
   },
 ];
 

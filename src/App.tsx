@@ -35,8 +35,10 @@ export default function App() {
   // Navigation tab: 'create' | 'creations'
   const [currentTab, setCurrentTab] = useState<'create' | 'creations'>('create');
 
-  // Staged Assets
-  const [playerAsset, setPlayerAsset] = useState<PlayerAsset | null>(null);
+  // Staged Assets (Multi-Person Batch & Single Player)
+  const [players, setPlayers] = useState<PlayerAsset[]>([]);
+  const [activePlayerIndex, setActivePlayerIndex] = useState<number>(0);
+  const playerAsset = players[activePlayerIndex] || null;
   const [garments, setGarments] = useState<Partial<Record<GarmentSlotId, GarmentAsset>>>({});
 
   // Customization & Mode
@@ -125,7 +127,9 @@ export default function App() {
         if (resp.ok) {
           const report = await resp.json();
           if (report.player) {
-            setPlayerAsset((prev) => (prev ? { ...prev, analysis: report.player } : null));
+            setPlayers((prev) =>
+              prev.map((p, idx) => (idx === activePlayerIndex ? { ...p, analysis: report.player } : p))
+            );
           }
           if (report.garments) {
             setGarments((prev) => {
@@ -152,13 +156,41 @@ export default function App() {
     []
   );
 
-  // Update Player Asset
-  const handleSelectPlayer = (asset: PlayerAsset | null) => {
-    setPlayerAsset(asset);
+  // Player Asset Batch & Single Handlers
+  const handleAddPlayers = (newAssets: PlayerAsset[]) => {
+    setPlayers((prev) => [...prev, ...newAssets]);
     setErrorNotice(null);
-    if (asset) {
-      triggerAssetAnalysis(asset, garments);
+    if (newAssets.length > 0) {
+      triggerAssetAnalysis(newAssets[0], garments);
     }
+  };
+
+  const handleRemovePlayer = (index: number) => {
+    setPlayers((prev) => {
+      const updated = prev.filter((_, idx) => idx !== index);
+      if (activePlayerIndex >= updated.length) {
+        setActivePlayerIndex(Math.max(0, updated.length - 1));
+      }
+      return updated;
+    });
+  };
+
+  const handleClearAllPlayers = () => {
+    setPlayers([]);
+    setActivePlayerIndex(0);
+    setErrorNotice(null);
+  };
+
+  const handleSelectPlayer = (asset: PlayerAsset | null) => {
+    if (asset) {
+      setPlayers([asset]);
+      setActivePlayerIndex(0);
+      triggerAssetAnalysis(asset, garments);
+    } else {
+      setPlayers([]);
+      setActivePlayerIndex(0);
+    }
+    setErrorNotice(null);
   };
 
   // Update Garment Asset
@@ -174,7 +206,7 @@ export default function App() {
   };
 
   // Check validation rules
-  const hasPlayer = Boolean(playerAsset?.dataUrl);
+  const hasPlayer = players.length > 0 && Boolean(playerAsset?.dataUrl);
   const activeGarmentsCount = Object.keys(garments).filter((k) => garments[k as GarmentSlotId]).length;
   const hasGarment = activeGarmentsCount > 0;
   const hasCustomPrompt = Boolean(customization.customPrompt?.trim());
@@ -198,12 +230,14 @@ export default function App() {
   const currentTransparentImage = activeVariation?.transparentUrl || null;
   const currentShadowImage = activeVariation?.shadowTransparentUrl || null;
 
-  // GENERATE LOOK
+  // GENERATE LOOK (Supports Single Person or Multi-Person Batch with Shared Outfit Kit)
   const handleGenerateLook = async () => {
-    if (!canGenerate || !playerAsset || isGenerating) return;
+    if (!canGenerate || players.length === 0 || isGenerating) return;
 
     setIsGenerating(true);
-    setGeneratingStage('Stage 1/5: Locking body proportions & preparing canvas...');
+    setGeneratingStage(players.length > 1
+      ? `Batch: Preparing virtual try-on for ${players.length} people with shared Outfit Kit...`
+      : 'Stage 1/5: Locking body proportions & preparing canvas...');
     setErrorNotice(null);
     setPipelineWarnings([]);
     setGarmentStatusMap({});
@@ -214,7 +248,7 @@ export default function App() {
     setMobileTab('preview');
 
     try {
-      // Build garments dictionary
+      // Build shared garments dictionary (identical Outfit Kit shared across all people)
       const garmentsPayload: Record<string, any> = {};
       for (const [slotKey, garment] of Object.entries(garments)) {
         if (garment && garment.dataUrl) {
@@ -236,138 +270,145 @@ export default function App() {
         requestHeaders['x-hf-space-id'] = userSpaceId;
       }
 
-      // Call Netlify Function for image generation (authentication handled server-side via HF_TOKEN)
-      const response = await fetch('/.netlify/functions/generate-image', {
-        method: 'POST',
-        headers: requestHeaders,
-        body: JSON.stringify({
-          player: { data: playerAsset.dataUrl, mimeType: 'image/jpeg' },
-          garments: garmentsPayload,
-          customization,
-          mode,
-          aspectRatio: '3:4',
-          variationsCount,
-          spaceId: userSpaceId || undefined,
-        }),
-      });
+      const newVariations: LookVariation[] = [];
 
-      let data: any = {};
-      try {
-        data = await response.json();
-      } catch {
-        data = { error: `Server returned HTTP ${response.status}` };
-      }
+      // Process each person in the batch with the exact same shared 4-slot Outfit Kit
+      for (let pIdx = 0; pIdx < players.length; pIdx++) {
+        const person = players[pIdx];
+        const personLabel = players.length > 1 ? `[Person ${pIdx + 1}/${players.length}: ${person.fileName}] ` : '';
 
-      // Asynchronous Background Processing: Handle HTTP 202 and queued/processing jobs
-      if ((response.status === 202 || response.ok) && data.jobId && data.status !== 'completed') {
-        let attempts = 0;
-        const maxAttempts = 240; // 240 attempts * 2.5s = 600s (10 minutes)
-        let isComplete = false;
+        setGeneratingStage(`${personLabel}Stage 1/5: Submitting try-on with shared Outfit Kit...`);
 
-        while (attempts < maxAttempts) {
-          await new Promise((r) => setTimeout(r, 2500));
-          const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
-          if (checkResp.ok) {
-            const checkData = await checkResp.json();
-            if (checkData.stage) {
-              setGeneratingStage(checkData.stage);
-            }
-            if (checkData.status === 'completed') {
-              if (checkData.result && checkData.result.images?.length) {
-                data = { ...checkData.result, success: true };
-                isComplete = true;
-                break;
-              } else {
-                // Secondary check via get-job-result
-                const resultResp = await fetch(`/.netlify/functions/get-job-result?jobId=${data.jobId}`);
-                if (resultResp.ok) {
-                  const resultData = await resultResp.json();
-                  if (resultData.images?.length) {
-                    data = { ...resultData, success: true };
-                    isComplete = true;
-                    break;
-                  }
-                }
-              }
-            } else if (checkData.status === 'failed') {
-              if (checkData.requiresCredentials) setRequiresCredentials(true);
-              if (checkData.isQuotaExhausted) setIsQuotaError(true);
-              setErrorNotice(checkData.error || 'Virtual Try-On generation failed.');
-              setIsGenerating(false);
-              return;
-            }
-          }
-          attempts++;
+        const response = await fetch('/.netlify/functions/generate-image', {
+          method: 'POST',
+          headers: requestHeaders,
+          body: JSON.stringify({
+            player: { data: person.dataUrl, mimeType: 'image/jpeg' },
+            garments: garmentsPayload,
+            customization,
+            mode,
+            aspectRatio: '3:4',
+            variationsCount: 1,
+            spaceId: userSpaceId || undefined,
+          }),
+        });
+
+        let data: any = {};
+        try {
+          data = await response.json();
+        } catch {
+          data = { error: `Server returned HTTP ${response.status}` };
         }
 
-        if (!isComplete && (!data.images || data.images.length === 0)) {
-          setErrorNotice('Virtual Try-On timed out waiting for Hugging Face ZeroGPU queue. Please retry.');
+        // Asynchronous Background Processing: Handle HTTP 202 and queued/processing jobs
+        if ((response.status === 202 || response.ok) && data.jobId && data.status !== 'completed') {
+          let attempts = 0;
+          const maxAttempts = 240; // 240 attempts * 2.5s = 600s (10 minutes)
+          let isComplete = false;
+
+          while (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 2500));
+            const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
+            if (checkResp.ok) {
+              const checkData = await checkResp.json();
+              if (checkData.stage) {
+                setGeneratingStage(`${personLabel}${checkData.stage}`);
+              }
+              if (checkData.status === 'completed') {
+                if (checkData.result && checkData.result.images?.length) {
+                  data = { ...checkData.result, success: true };
+                  isComplete = true;
+                  break;
+                } else {
+                  // Secondary check via get-job-result
+                  const resultResp = await fetch(`/.netlify/functions/get-job-result?jobId=${data.jobId}`);
+                  if (resultResp.ok) {
+                    const resultData = await resultResp.json();
+                    if (resultData.images?.length) {
+                      data = { ...resultData, success: true };
+                      isComplete = true;
+                      break;
+                    }
+                  }
+                }
+              } else if (checkData.status === 'failed') {
+                if (checkData.requiresCredentials) setRequiresCredentials(true);
+                if (checkData.isQuotaExhausted) setIsQuotaError(true);
+                setErrorNotice(checkData.error || `Virtual Try-On generation failed for ${person.fileName}`);
+                setIsGenerating(false);
+                return;
+              }
+            }
+            attempts++;
+          }
+
+          if (!isComplete && (!data.images || data.images.length === 0)) {
+            setErrorNotice(`Virtual Try-On timed out waiting for Hugging Face ZeroGPU queue for ${person.fileName}`);
+            setIsGenerating(false);
+            return;
+          }
+        }
+
+        if ((!response.ok && response.status !== 202) || !data.images || data.images.length === 0) {
+          if (data.requiresCredentials || response.status === 401) {
+            setRequiresCredentials(true);
+          } else if (data.isQuotaExhausted || response.status === 429) {
+            setIsQuotaError(true);
+          }
+
+          const detailMsg = data.error ||
+            (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
+
+          const isExpectedNotice =
+            data.isQuotaExhausted ||
+            response.status === 429 ||
+            data.isAuthError ||
+            data.requiresCredentials ||
+            response.status === 401;
+
+          if (isExpectedNotice) {
+            console.warn('[Look Generation Status Notice]', { status: response.status, data });
+          } else {
+            console.error('[Look Generation Error]', { status: response.status, data });
+          }
+          setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
           setIsGenerating(false);
           return;
         }
-      }
 
-      if ((!response.ok && response.status !== 202) || !data.images || data.images.length === 0) {
-        if (data.requiresCredentials || response.status === 401) {
-          setRequiresCredentials(true);
-        } else if (data.isQuotaExhausted || response.status === 429) {
-          setIsQuotaError(true);
+        // Quality control: capture warnings and status per category
+        if (data.warnings && Array.isArray(data.warnings)) {
+          setPipelineWarnings(data.warnings);
+        }
+        if (data.garmentStatus) {
+          setGarmentStatusMap(data.garmentStatus);
         }
 
-        const detailMsg = data.error ||
-          (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
+        // Process transparent cutout and studio contact shadow for this person
+        for (let i = 0; i < data.images.length; i++) {
+          const item = data.images[i];
+          let transUrl: string | undefined = undefined;
+          let shadowUrl: string | undefined = undefined;
 
-        const isExpectedNotice =
-          data.isQuotaExhausted ||
-          response.status === 429 ||
-          data.isAuthError ||
-          data.requiresCredentials ||
-          response.status === 401;
+          try {
+            transUrl = await removeBackground(item.imageUrl, { tolerance: 30, feather: 2 });
+            shadowUrl = await addContactShadow(transUrl);
+          } catch (segmentationErr) {
+            console.warn('Background removal non-fatal fallback:', segmentationErr);
+            transUrl = item.imageUrl;
+          }
 
-        if (isExpectedNotice) {
-          console.warn('[Look Generation Status Notice]', { status: response.status, data });
-        } else {
-          console.error('[Look Generation Error]', { status: response.status, data });
+          newVariations.push({
+            id: `var_${Date.now()}_p${pIdx}_${i}`,
+            imageUrl: item.imageUrl,
+            label: players.length > 1
+              ? `Person ${pIdx + 1}: ${person.fileName.replace(/\.[^/.]+$/, '')}`
+              : (item.label || 'Virtual Try-On Look'),
+            index: newVariations.length,
+            transparentUrl: transUrl,
+            shadowTransparentUrl: shadowUrl,
+          });
         }
-        setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
-        setIsGenerating(false);
-        return;
-      }
-
-      // Quality control: capture warnings and status per category
-      if (data.warnings && Array.isArray(data.warnings)) {
-        setPipelineWarnings(data.warnings);
-      }
-      if (data.garmentStatus) {
-        setGarmentStatusMap(data.garmentStatus);
-      }
-
-      // Process transparent cutout and studio contact shadow for primary result
-      const newVariations: LookVariation[] = [];
-
-      for (let i = 0; i < data.images.length; i++) {
-        const item = data.images[i];
-        let transUrl: string | undefined = undefined;
-        let shadowUrl: string | undefined = undefined;
-
-        try {
-          // Dedicated subject segmentation for true transparent PNG
-          transUrl = await removeBackground(item.imageUrl, { tolerance: 30, feather: 2 });
-          // Directional studio contact shadow on transparent canvas
-          shadowUrl = await addContactShadow(transUrl);
-        } catch (segmentationErr) {
-          console.warn('Background removal non-fatal fallback:', segmentationErr);
-          transUrl = item.imageUrl;
-        }
-
-        newVariations.push({
-          id: `var_${Date.now()}_${i}`,
-          imageUrl: item.imageUrl,
-          label: item.label || `Look ${i + 1}`,
-          index: i,
-          transparentUrl: transUrl,
-          shadowTransparentUrl: shadowUrl,
-        });
       }
 
       setVariations(newVariations);
@@ -421,7 +462,8 @@ export default function App() {
 
   // Workspace Reset
   const handleResetWorkspace = () => {
-    setPlayerAsset(null);
+    setPlayers([]);
+    setActivePlayerIndex(0);
     setGarments({});
     setVariations([]);
     setActiveVariationIndex(0);
@@ -442,7 +484,8 @@ export default function App() {
 
   // Open Project from My Creations
   const handleOpenProject = (proj: ProjectRecord) => {
-    setPlayerAsset(proj.playerAsset);
+    setPlayers(proj.playerAsset ? [proj.playerAsset] : []);
+    setActivePlayerIndex(0);
     setGarments(proj.garments || {});
     setCustomization(proj.customization || {
       colors: {},
@@ -626,10 +669,14 @@ export default function App() {
                 mobileTab === 'assets' ? 'flex' : 'hidden lg:flex'
               }`}
             >
-              {/* Player Upload */}
+              {/* Multi-Person Batch & Single Player Upload */}
               <PlayerUpload
-                playerAsset={playerAsset}
-                onSelectPlayer={handleSelectPlayer}
+                players={players}
+                activePlayerIndex={activePlayerIndex}
+                onSelectActivePlayer={setActivePlayerIndex}
+                onAddPlayers={handleAddPlayers}
+                onRemovePlayer={handleRemovePlayer}
+                onClearAllPlayers={handleClearAllPlayers}
                 isAnalyzing={isAnalyzing}
               />
 

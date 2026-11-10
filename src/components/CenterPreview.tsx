@@ -676,7 +676,7 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                   title={stat.note}
                 >
                   <span className="uppercase font-bold">{slot}:</span>
-                  <span>{stat.applied ? '✓ Applied' : 'Preserved'}</span>
+                  <span>{stat.applied ? '✓ Applied' : 'Unsupported (Model Pending)'}</span>
                   {stat.model && (
                     <span className="text-[9px] text-neutral-400">
                       ({stat.model.includes('/') ? stat.model.split('/')[1] : stat.model})

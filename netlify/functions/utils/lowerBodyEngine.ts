@@ -1,12 +1,11 @@
 /**
  * Dedicated Lower-Body (Pants / Bottoms) Virtual Try-On Engine for MXM CREATOR
- * Connects to:
- * 1. Primary: levihsu/OOTDiffusion Space (/process_dc with category: "Lower-body")
- * 2. Fallback: MXM High-Fidelity Lower-Body Neural Inpainting Engine
+ * Connects exclusively to genuine AI virtual try-on models:
+ * Primary: levihsu/OOTDiffusion Space (/process_dc with category: "Lower-body")
  * 
  * Strict Guarantees:
- * - Full-length pants remain full-length (ankle coverage).
- * - Shorts remain shorts (knee / thigh coverage, preserving natural legs).
+ * - NO fake rectangular image overlays or canvas drawImage pasting.
+ * - If the genuine diffusion model is unavailable, reports honest failure and leaves canvas unmodified.
  * - Preserves body proportions, leg anatomy, original shoes, and background.
  */
 
@@ -27,6 +26,7 @@ export interface PantsResult {
   maskBuffer?: Buffer;
   note: string;
   model: string;
+  status: 'applied' | 'failed' | 'unsupported';
 }
 
 export async function replacePants(options: PantsOptions): Promise<PantsResult> {
@@ -40,7 +40,7 @@ export async function replacePants(options: PantsOptions): Promise<PantsResult> 
 
   const { buffer: pantsBuf, mimeType: pantsMime } = parseDataUrl(options.pantsDataUrl);
 
-  // 1. Attempt Primary: levihsu/OOTDiffusion (/process_dc with category: "Lower-body")
+  // 1. Attempt Genuine Diffusion Model: levihsu/OOTDiffusion (/process_dc with category: "Lower-body")
   try {
     const connectOptions: any = {};
     if (config.token) {
@@ -57,36 +57,35 @@ export async function replacePants(options: PantsOptions): Promise<PantsResult> 
       handle_file(canvasBlob),
       handle_file(garmentBlob),
       'Lower-body',
-      1,
-      20,
-      2.0,
-      -1,
-    ], null, null, true);
+      1,     // n_samples
+      20,    // n_steps
+      2.0,   // image_scale
+      -1,    // seed
+    ]);
 
-    let galleryData: any = null;
-    let jobError: string | null = null;
+    let outputData: any = null;
+    let failedMessage: string | null = null;
 
     for await (const msg of job) {
       if (msg.type === 'status' && msg.stage === 'error') {
-        jobError = typeof msg.message === 'string' ? msg.message : JSON.stringify(msg.message);
+        failedMessage = typeof (msg as any).message === 'string' ? (msg as any).message : JSON.stringify((msg as any).message);
         break;
       } else if (msg.type === 'data') {
-        galleryData = msg.data;
+        outputData = msg.data;
         break;
       }
     }
 
-    if (!jobError && galleryData && Array.isArray(galleryData) && galleryData.length > 0) {
-      const outputItem = galleryData[0];
-      const imageUrl = typeof outputItem === 'string' ? outputItem : outputItem?.image?.url || outputItem?.url;
+    if (outputData && Array.isArray(outputData) && outputData[0]) {
+      const item = outputData[0];
+      const resultUrl = typeof item === 'string' ? item : item?.url || item?.image?.url;
 
-      if (imageUrl && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
-        const resp = await fetch(imageUrl);
+      if (resultUrl) {
+        const resp = await fetch(resultUrl);
         if (resp.ok) {
-          const ab = await resp.arrayBuffer();
-          const neuralResultBuf = Buffer.from(ab);
+          const neuralArrayBuf = await resp.arrayBuffer();
+          const neuralResultBuf = Buffer.from(neuralArrayBuf);
 
-          // Restore exact canvas dimensions
           const meta = await sharp(options.canvasBuffer).metadata();
           const restoredBuf = await sharp(neuralResultBuf)
             .resize(meta.width || 768, meta.height || 1024, { fit: 'fill' })
@@ -97,68 +96,28 @@ export async function replacePants(options: PantsOptions): Promise<PantsResult> 
             success: true,
             outputBuffer: restoredBuf,
             model: 'levihsu/OOTDiffusion (Lower-body)',
-            note: `Successfully applied lower-body try-on via levihsu/OOTDiffusion (${options.pantsName || 'Pants'}).`,
+            status: 'applied',
+            note: `Successfully transformed lower-body via levihsu/OOTDiffusion (${options.pantsName || 'Pants'}).`,
           };
         }
       }
     }
+
+    if (failedMessage) {
+      console.warn('[Pants Try-On] OOTDiffusion returned error:', failedMessage);
+    }
   } catch (err: any) {
-    // ZeroGPU or network fallback to local lower-body compositing engine
-    console.warn('[Pants Try-On Notice] OOTDiffusion busy, activating MXM Lower-Body Engine:', err?.message || 'Fallback');
+    console.warn('[Pants Try-On] OOTDiffusion connection notice:', err?.message || err);
   }
 
-  // 2. High-Precision Lower-Body Neural Alignment Engine (Fallback)
-  try {
-    const canvasMeta = await sharp(options.canvasBuffer).metadata();
-    const cWidth = canvasMeta.width || 768;
-    const cHeight = canvasMeta.height || 1024;
-
-    // Isolate pants reference
-    const trimmedPants = await sharp(pantsBuf)
-      .trim({ threshold: 12 })
-      .toBuffer()
-      .catch(() => pantsBuf);
-
-    // Anatomical Lower-Body Coordinates (From waist/pelvis to ankles or knees)
-    // Full-length pants: Y ~ 43% to 85% of canvas
-    // Shorts:           Y ~ 43% to 62% of canvas (leaves knees and calves fully visible)
-    const waistY = Math.round(cHeight * 0.43);
-    const targetPantsHeight = Math.max(1, isShorts ? Math.round(cHeight * 0.20) : Math.round(cHeight * 0.42));
-    const targetPantsWidth = Math.max(1, Math.round(cWidth * 0.38));
-    const targetPantsX = Math.round((cWidth - targetPantsWidth) / 2);
-
-    const preparedPants = await sharp(trimmedPants)
-      .resize(targetPantsWidth, targetPantsHeight, {
-        fit: 'contain',
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      })
-      .png()
-      .toBuffer();
-
-    // Composite lower body while preserving waistline junction and shoes
-    const compositedBuffer = await sharp(options.canvasBuffer)
-      .composite([
-        {
-          input: preparedPants,
-          left: targetPantsX,
-          top: waistY,
-        },
-      ])
-      .png()
-      .toBuffer();
-
-    return {
-      success: true,
-      outputBuffer: compositedBuffer,
-      model: 'MXM Lower-Body Fit Engine',
-      note: `Applied lower-body reference (${options.pantsName || 'Pants'}) preserving ${isShorts ? 'knee-length shorts silhouette' : 'full-length trouser drape'} and anatomical leg proportions.`,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      outputBuffer: options.canvasBuffer,
-      model: 'MXM Lower-Body Fit Engine',
-      note: `Lower-body transformation failed: ${err?.message || 'Error fitting pants'}`,
-    };
-  }
+  // 2. Strict Anti-Fake Policy:
+  // NEVER paste raw reference images as 2D rectangular overlays.
+  // Leave the canvas buffer completely untouched and report honest status.
+  return {
+    success: false,
+    outputBuffer: options.canvasBuffer,
+    model: 'levihsu/OOTDiffusion (Lower-body)',
+    status: 'unsupported',
+    note: 'Lower-body virtual try-on requires an active diffusion model. Public OOTDiffusion Space is currently unavailable or quota exhausted. Fake 2D rectangular overlays have been strictly disabled.',
+  };
 }

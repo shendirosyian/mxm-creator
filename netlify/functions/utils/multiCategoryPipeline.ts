@@ -32,6 +32,7 @@ export interface MultiCategoryOptions {
 
 export interface CategoryStatusDetail {
   applied: boolean;
+  status: 'applied' | 'failed' | 'unsupported' | 'pending';
   model: string;
   note: string;
 }
@@ -111,6 +112,7 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
 
       garmentStatus['top'] = {
         applied: true,
+        status: 'applied',
         model: activeSpace,
         note: `Applied via high-precision OpenPose + SCHP upper-body try-on (${topGarment.name || 'Top'}).`,
       };
@@ -138,6 +140,7 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
       }
       garmentStatus['top'] = {
         applied: false,
+        status: 'failed',
         model: activeSpace,
         note: topResult.error || 'Upper body transformation did not complete.',
       };
@@ -162,12 +165,14 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
       currentCanvasBuffer = pantsResult.outputBuffer;
       garmentStatus['pants'] = {
         applied: true,
+        status: 'applied',
         model: pantsResult.model,
         note: pantsResult.note,
       };
     } else {
       garmentStatus['pants'] = {
         applied: false,
+        status: pantsResult.status || 'unsupported',
         model: pantsResult.model,
         note: pantsResult.note,
       };
@@ -178,7 +183,7 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
   // 4. STAGE 3: SHOES (Footwear Replacement)
   if (shoesGarment) {
     options.onProgress?.({
-      stage: 'Stage 3/4: Applying Footwear Perspective Alignment...',
+      stage: 'Stage 3/4: Checking Footwear Model Availability...',
       progress: 0.75,
     });
 
@@ -192,12 +197,14 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
       currentCanvasBuffer = shoeResult.outputBuffer;
       garmentStatus['shoes'] = {
         applied: true,
+        status: 'applied',
         model: shoeResult.model,
         note: shoeResult.note,
       };
     } else {
       garmentStatus['shoes'] = {
         applied: false,
+        status: shoeResult.status || 'unsupported',
         model: shoeResult.model,
         note: shoeResult.note,
       };
@@ -208,7 +215,7 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
   // 5. STAGE 4: ACCESSORIES (Headwear, Eyewear, Jewelry)
   if (accessoriesGarment) {
     options.onProgress?.({
-      stage: 'Stage 4/4: Fitting Localized Accessory (Preserving Face & Anatomy)...',
+      stage: 'Stage 4/4: Checking Accessory Model Availability...',
       progress: 0.90,
     });
 
@@ -222,12 +229,14 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
       currentCanvasBuffer = accResult.outputBuffer;
       garmentStatus['accessories'] = {
         applied: true,
+        status: 'applied',
         model: accResult.model,
         note: accResult.note,
       };
     } else {
       garmentStatus['accessories'] = {
         applied: false,
+        status: accResult.status || 'unsupported',
         model: accResult.model,
         note: accResult.note,
       };
