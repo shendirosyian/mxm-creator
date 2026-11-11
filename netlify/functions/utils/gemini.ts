@@ -8,7 +8,9 @@
  * - Server-side only (Netlify Functions / Express backend).
  * - Genuine AI image transformation: person photo and garment reference are passed as distinct visual inputs.
  * - Preserves person identity, facial features, body anatomy, pose, and background.
- * - NO fake 2D sticker pasting or rectangular canvas overlays.
+ * - Validates that GEMINI_API_KEY is a valid Google AI Studio Developer API key (starting with "AIzaSy").
+ * - Never calls API with ambient OAuth/access tokens (which cause ACCESS_TOKEN_TYPE_UNSUPPORTED).
+ * - Honest status reporting: if GEMINI_API_KEY is not configured, returns status: 'not_configured'.
  */
 
 import { GoogleGenAI } from '@google/genai';
@@ -23,9 +25,19 @@ export function cleanApiKey(raw?: string): string {
   return key;
 }
 
+/**
+ * Validates that the key is an authentic Google AI Studio Gemini API key.
+ * All Google AI Studio API keys begin with "AIzaSy" and are ~39 characters.
+ * OAuth access tokens (starting with "ya29." or "AQ.") are rejected here to prevent
+ * ACCESS_TOKEN_TYPE_UNSUPPORTED errors.
+ */
 export function getGeminiApiKey(): string | null {
-  const key = cleanApiKey(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY);
-  return key || null;
+  const rawKey = cleanApiKey(process.env.GEMINI_API_KEY);
+  if (!rawKey) return null;
+  if (!rawKey.startsWith('AIzaSy') || rawKey.length < 25) {
+    return null;
+  }
+  return rawKey;
 }
 
 export function getGeminiClient(): GoogleGenAI | null {
@@ -82,8 +94,8 @@ export async function transformClothingWithGemini(
       outputBuffer: options.baseImageBuffer,
       model: `Google Gemini (${modelName})`,
       status: 'not_configured',
-      note: `GEMINI_API_KEY is not configured in server environment variables. Required for genuine AI ${options.slot} transformation.`,
-      error: 'GEMINI_API_KEY_MISSING',
+      note: `Valid Google AI Studio GEMINI_API_KEY (starting with "AIzaSy...") is required for genuine AI ${options.slot} transformation. Configure in Settings > API Keys.`,
+      error: 'GEMINI_API_KEY_NOT_CONFIGURED',
     };
   }
 
@@ -221,14 +233,14 @@ Task: Seamlessly place the accessory from Image 2 onto the person in Image 1 at 
       note: `Applied genuine AI ${options.slot} transformation (${nameLabel}) via Google Gemini.`,
     };
   } catch (err: any) {
-    console.error(`[Gemini Try-On Error for ${options.slot}]`, err);
+    const errorMsg = err?.message || String(err);
     return {
       success: false,
       outputBuffer: options.baseImageBuffer,
       model: `Google Gemini (${modelName})`,
       status: 'failed',
-      note: `AI ${options.slot} transformation error: ${err?.message || err}`,
-      error: err?.message || String(err),
+      note: `AI ${options.slot} transformation error: ${errorMsg}`,
+      error: errorMsg,
     };
   }
 }
@@ -243,14 +255,25 @@ export async function runGeminiDiagnostic(): Promise<{
   statusText: string;
   sanitizedMessage: string;
 }> {
-  const apiKey = getGeminiApiKey();
-  if (!apiKey) {
+  const rawKey = cleanApiKey(process.env.GEMINI_API_KEY);
+
+  if (!rawKey) {
     return {
       success: false,
       hasApiKey: false,
       statusCode: 401,
       statusText: 'API Key Missing',
-      sanitizedMessage: 'GEMINI_API_KEY is not defined in server environment.',
+      sanitizedMessage: 'GEMINI_API_KEY is not defined in server environment. Obtain a free key at https://aistudio.google.com/app/apikey.',
+    };
+  }
+
+  if (!rawKey.startsWith('AIzaSy') || rawKey.length < 25) {
+    return {
+      success: false,
+      hasApiKey: false,
+      statusCode: 401,
+      statusText: 'Invalid Key Format',
+      sanitizedMessage: 'The configured key is not an AI Studio Developer API key (valid Gemini keys start with "AIzaSy..."). Get your free key at https://aistudio.google.com/app/apikey.',
     };
   }
 
@@ -281,12 +304,22 @@ export async function runGeminiDiagnostic(): Promise<{
       sanitizedMessage: 'Connected but received no response text from Gemini.',
     };
   } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('ACCESS_TOKEN_TYPE_UNSUPPORTED') || msg.includes('API key not valid')) {
+      return {
+        success: false,
+        hasApiKey: false,
+        statusCode: 401,
+        statusText: 'Invalid Key Type',
+        sanitizedMessage: 'Google rejected this key (ACCESS_TOKEN_TYPE_UNSUPPORTED). Valid Gemini keys start with "AIzaSy...". Configure your key in Settings > API Keys.',
+      };
+    }
     return {
       success: false,
       hasApiKey: true,
       statusCode: 500,
       statusText: 'Connection Failed',
-      sanitizedMessage: err?.message || 'Failed to authenticate with Google Gemini API.',
+      sanitizedMessage: msg || 'Failed to authenticate with Google Gemini API.',
     };
   }
 }

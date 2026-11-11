@@ -34,7 +34,7 @@ export interface MultiCategoryOptions {
 
 export interface CategoryStatusDetail {
   applied: boolean;
-  status: 'applied' | 'failed' | 'not_configured' | 'unsupported' | 'pending';
+  status: 'applied' | 'needs_review' | 'not_configured' | 'failed' | 'unsupported' | 'pending';
   model: string;
   note: string;
 }
@@ -190,11 +190,14 @@ export async function runMultiCategoryTryOn(options: MultiCategoryOptions): Prom
     if (pantsResult.success) {
       currentCanvasBuffer = pantsResult.outputBuffer;
       garmentStatus['pants'] = {
-        applied: true,
-        status: 'applied',
+        applied: pantsResult.status === 'applied',
+        status: pantsResult.status,
         model: pantsResult.model,
         note: pantsResult.note,
       };
+      if (pantsResult.status === 'needs_review') {
+        warnings.push(`Pants: ${pantsResult.note}`);
+      }
     } else {
       garmentStatus['pants'] = {
         applied: false,

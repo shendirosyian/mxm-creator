@@ -24,7 +24,7 @@ export interface AccessoryResult {
   maskBuffer?: Buffer;
   note: string;
   model: string;
-  status: 'applied' | 'failed' | 'not_configured';
+  status: 'applied' | 'needs_review' | 'not_configured' | 'failed';
 }
 
 export async function replaceAccessory(options: AccessoryOptions): Promise<AccessoryResult> {
@@ -35,9 +35,9 @@ export async function replaceAccessory(options: AccessoryOptions): Promise<Acces
     return {
       success: false,
       outputBuffer: options.canvasBuffer,
-      model: 'Google Gemini (gemini-3.1-flash-lite-image)',
+      model: 'Google Gemini Landmark Inpainting',
       status: 'not_configured',
-      note: 'Accessory placement requires GEMINI_API_KEY in server environment variables. Configure in Settings > API Keys.',
+      note: 'Accessory placement requires server GEMINI_API_KEY (starting with "AIzaSy...") for anatomical landmark inpainting (hats, glasses, watches, bags). Configure in Settings > API Keys.',
     };
   }
 

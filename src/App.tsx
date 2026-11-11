@@ -271,6 +271,7 @@ export default function App() {
       }
 
       const newVariations: LookVariation[] = [];
+      const batchErrors: Array<{ person: string; error: string }> = [];
 
       // Process each person in the batch with the exact same shared 4-slot Outfit Kit
       for (let pIdx = 0; pIdx < players.length; pIdx++) {
@@ -279,136 +280,165 @@ export default function App() {
 
         setGeneratingStage(`${personLabel}Stage 1/5: Submitting try-on with shared Outfit Kit...`);
 
-        const response = await fetch('/.netlify/functions/generate-image', {
-          method: 'POST',
-          headers: requestHeaders,
-          body: JSON.stringify({
-            player: { data: person.dataUrl, mimeType: 'image/jpeg' },
-            garments: garmentsPayload,
-            customization,
-            mode,
-            aspectRatio: '3:4',
-            variationsCount: 1,
-            spaceId: userSpaceId || undefined,
-          }),
-        });
-
-        let data: any = {};
         try {
-          data = await response.json();
-        } catch {
-          data = { error: `Server returned HTTP ${response.status}` };
-        }
+          const response = await fetch('/.netlify/functions/generate-image', {
+            method: 'POST',
+            headers: requestHeaders,
+            body: JSON.stringify({
+              player: { data: person.dataUrl, mimeType: 'image/jpeg' },
+              garments: garmentsPayload,
+              customization,
+              mode,
+              aspectRatio: '3:4',
+              variationsCount: 1,
+              spaceId: userSpaceId || undefined,
+            }),
+          });
 
-        // Asynchronous Background Processing: Handle HTTP 202 and queued/processing jobs
-        if ((response.status === 202 || response.ok) && data.jobId && data.status !== 'completed') {
-          let attempts = 0;
-          const maxAttempts = 240; // 240 attempts * 2.5s = 600s (10 minutes)
-          let isComplete = false;
+          let data: any = {};
+          try {
+            data = await response.json();
+          } catch {
+            data = { error: `Server returned HTTP ${response.status}` };
+          }
 
-          while (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 2500));
-            const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
-            if (checkResp.ok) {
-              const checkData = await checkResp.json();
-              if (checkData.stage) {
-                setGeneratingStage(`${personLabel}${checkData.stage}`);
-              }
-              if (checkData.status === 'completed') {
-                if (checkData.result && checkData.result.images?.length) {
-                  data = { ...checkData.result, success: true };
-                  isComplete = true;
-                  break;
-                } else {
-                  // Secondary check via get-job-result
-                  const resultResp = await fetch(`/.netlify/functions/get-job-result?jobId=${data.jobId}`);
-                  if (resultResp.ok) {
-                    const resultData = await resultResp.json();
-                    if (resultData.images?.length) {
-                      data = { ...resultData, success: true };
-                      isComplete = true;
-                      break;
+          // Asynchronous Background Processing: Handle HTTP 202 and queued/processing jobs
+          if ((response.status === 202 || response.ok) && data.jobId && data.status !== 'completed') {
+            let attempts = 0;
+            const maxAttempts = 240; // 240 attempts * 2.5s = 600s (10 minutes)
+            let isComplete = false;
+
+            while (attempts < maxAttempts) {
+              await new Promise((r) => setTimeout(r, 2500));
+              const checkResp = await fetch(`/.netlify/functions/check-job?jobId=${data.jobId}`);
+              if (checkResp.ok) {
+                const checkData = await checkResp.json();
+                if (checkData.stage) {
+                  setGeneratingStage(`${personLabel}${checkData.stage}`);
+                }
+                if (checkData.status === 'completed') {
+                  if (checkData.result && checkData.result.images?.length) {
+                    data = { ...checkData.result, success: true };
+                    isComplete = true;
+                    break;
+                  } else {
+                    // Secondary check via get-job-result
+                    const resultResp = await fetch(`/.netlify/functions/get-job-result?jobId=${data.jobId}`);
+                    if (resultResp.ok) {
+                      const resultData = await resultResp.json();
+                      if (resultData.images?.length) {
+                        data = { ...resultData, success: true };
+                        isComplete = true;
+                        break;
+                      }
                     }
                   }
+                } else if (checkData.status === 'failed') {
+                  if (checkData.requiresCredentials) setRequiresCredentials(true);
+                  if (checkData.isQuotaExhausted) setIsQuotaError(true);
+                  const errorMsg = checkData.error || `Virtual Try-On generation failed for ${person.fileName}`;
+                  if (players.length === 1) {
+                    setErrorNotice(errorMsg);
+                    setIsGenerating(false);
+                    return;
+                  } else {
+                    batchErrors.push({ person: person.fileName, error: errorMsg });
+                    console.warn(`[Batch Worker Notice] ${errorMsg}`);
+                    break;
+                  }
                 }
-              } else if (checkData.status === 'failed') {
-                if (checkData.requiresCredentials) setRequiresCredentials(true);
-                if (checkData.isQuotaExhausted) setIsQuotaError(true);
-                setErrorNotice(checkData.error || `Virtual Try-On generation failed for ${person.fileName}`);
+              }
+              attempts++;
+            }
+
+            if (!isComplete && (!data.images || data.images.length === 0)) {
+              const timeoutMsg = `Virtual Try-On timed out waiting for Hugging Face ZeroGPU queue for ${person.fileName}`;
+              if (players.length === 1) {
+                setErrorNotice(timeoutMsg);
                 setIsGenerating(false);
                 return;
+              } else {
+                batchErrors.push({ person: person.fileName, error: timeoutMsg });
+                continue;
               }
             }
-            attempts++;
           }
 
-          if (!isComplete && (!data.images || data.images.length === 0)) {
-            setErrorNotice(`Virtual Try-On timed out waiting for Hugging Face ZeroGPU queue for ${person.fileName}`);
+          if ((!response.ok && response.status !== 202) || !data.images || data.images.length === 0) {
+            if (data.requiresCredentials || response.status === 401) {
+              setRequiresCredentials(true);
+            } else if (data.isQuotaExhausted || response.status === 429) {
+              setIsQuotaError(true);
+            }
+
+            const detailMsg = data.error ||
+              (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
+
+            if (players.length === 1) {
+              setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
+              setIsGenerating(false);
+              return;
+            } else {
+              batchErrors.push({ person: person.fileName, error: detailMsg });
+              continue;
+            }
+          }
+
+          // Quality control: capture warnings and status per category
+          if (data.warnings && Array.isArray(data.warnings)) {
+            setPipelineWarnings(data.warnings);
+          }
+          if (data.garmentStatus) {
+            setGarmentStatusMap(data.garmentStatus);
+          }
+
+          // Process transparent cutout and studio contact shadow for this person
+          for (let i = 0; i < data.images.length; i++) {
+            const item = data.images[i];
+            let transUrl: string | undefined = undefined;
+            let shadowUrl: string | undefined = undefined;
+
+            try {
+              transUrl = await removeBackground(item.imageUrl, { tolerance: 30, feather: 2 });
+              shadowUrl = await addContactShadow(transUrl);
+            } catch (segmentationErr) {
+              console.warn('Background removal non-fatal fallback:', segmentationErr);
+              transUrl = item.imageUrl;
+            }
+
+            newVariations.push({
+              id: `var_${Date.now()}_p${pIdx}_${i}`,
+              imageUrl: item.imageUrl,
+              label: players.length > 1
+                ? `Person ${pIdx + 1}: ${person.fileName.replace(/\.[^/.]+$/, '')}`
+                : (item.label || 'Virtual Try-On Look'),
+              index: newVariations.length,
+              transparentUrl: transUrl,
+              shadowTransparentUrl: shadowUrl,
+            });
+          }
+        } catch (personErr: any) {
+          const pMsg = personErr?.message || `Failed to process ${person.fileName}`;
+          if (players.length === 1) {
+            setErrorNotice(pMsg);
             setIsGenerating(false);
             return;
-          }
-        }
-
-        if ((!response.ok && response.status !== 202) || !data.images || data.images.length === 0) {
-          if (data.requiresCredentials || response.status === 401) {
-            setRequiresCredentials(true);
-          } else if (data.isQuotaExhausted || response.status === 429) {
-            setIsQuotaError(true);
-          }
-
-          const detailMsg = data.error ||
-            (data.statusText ? `${data.statusText} (${response.status})` : `Server returned status ${response.status}`);
-
-          const isExpectedNotice =
-            data.isQuotaExhausted ||
-            response.status === 429 ||
-            data.isAuthError ||
-            data.requiresCredentials ||
-            response.status === 401;
-
-          if (isExpectedNotice) {
-            console.warn('[Look Generation Status Notice]', { status: response.status, data });
           } else {
-            console.error('[Look Generation Error]', { status: response.status, data });
+            batchErrors.push({ person: person.fileName, error: pMsg });
           }
-          setErrorNotice(`Virtual Try-On Error: ${detailMsg}`);
-          setIsGenerating(false);
-          return;
         }
+      }
 
-        // Quality control: capture warnings and status per category
-        if (data.warnings && Array.isArray(data.warnings)) {
-          setPipelineWarnings(data.warnings);
-        }
-        if (data.garmentStatus) {
-          setGarmentStatusMap(data.garmentStatus);
-        }
+      if (newVariations.length === 0) {
+        setErrorNotice(`Batch generation encountered errors: ${batchErrors.map(e => `${e.person} (${e.error})`).join('; ')}`);
+        setIsGenerating(false);
+        return;
+      }
 
-        // Process transparent cutout and studio contact shadow for this person
-        for (let i = 0; i < data.images.length; i++) {
-          const item = data.images[i];
-          let transUrl: string | undefined = undefined;
-          let shadowUrl: string | undefined = undefined;
-
-          try {
-            transUrl = await removeBackground(item.imageUrl, { tolerance: 30, feather: 2 });
-            shadowUrl = await addContactShadow(transUrl);
-          } catch (segmentationErr) {
-            console.warn('Background removal non-fatal fallback:', segmentationErr);
-            transUrl = item.imageUrl;
-          }
-
-          newVariations.push({
-            id: `var_${Date.now()}_p${pIdx}_${i}`,
-            imageUrl: item.imageUrl,
-            label: players.length > 1
-              ? `Person ${pIdx + 1}: ${person.fileName.replace(/\.[^/.]+$/, '')}`
-              : (item.label || 'Virtual Try-On Look'),
-            index: newVariations.length,
-            transparentUrl: transUrl,
-            shadowTransparentUrl: shadowUrl,
-          });
-        }
+      if (batchErrors.length > 0) {
+        setPipelineWarnings([
+          `Batch completed with ${newVariations.length} of ${players.length} people transformed. Notice: ${batchErrors.length} person(s) encountered issues (${batchErrors.map(e => e.person).join(', ')}).`,
+        ]);
       }
 
       setVariations(newVariations);

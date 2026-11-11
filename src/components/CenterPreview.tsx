@@ -27,7 +27,7 @@ interface CenterPreviewProps {
   isGenerating: boolean;
   generatingStage?: string;
   pipelineWarnings?: string[];
-  garmentStatusMap?: Record<string, { applied: boolean; model?: string; note: string; status?: 'applied' | 'failed' | 'not_configured' | 'unsupported' | 'pending' }>;
+  garmentStatusMap?: Record<string, { applied: boolean; model?: string; note: string; status?: 'applied' | 'needs_review' | 'not_configured' | 'failed' | 'unsupported' | 'pending' }>;
   onOpenExport: () => void;
   onOpenBrushTool?: () => void;
   hasMask?: boolean;
@@ -672,8 +672,10 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.top?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.top?.status === 'needs_review'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.top?.status === 'not_configured'
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
                     : garmentStatusMap.top
                     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
@@ -685,9 +687,11 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                   {garmentStatusMap.top
                     ? garmentStatusMap.top.applied
                       ? '✓ Applied'
+                      : garmentStatusMap.top.status === 'needs_review'
+                      ? '⚠ Needs Review'
                       : garmentStatusMap.top.status === 'not_configured'
-                      ? 'Not Configured'
-                      : 'Failed'
+                      ? '⚙ Not Configured'
+                      : '✕ Failed'
                     : 'Inactive'}
                 </span>
                 {garmentStatusMap.top?.applied && garmentStatusMap.top.model && (
@@ -702,8 +706,10 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.pants?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.pants?.status === 'needs_review'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.pants?.status === 'not_configured'
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
                     : garmentStatusMap.pants
                     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
@@ -715,9 +721,11 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                   {garmentStatusMap.pants
                     ? garmentStatusMap.pants.applied
                       ? '✓ Applied'
+                      : garmentStatusMap.pants.status === 'needs_review'
+                      ? '⚠ Needs Review'
                       : garmentStatusMap.pants.status === 'not_configured'
-                      ? 'Not Configured'
-                      : 'Failed'
+                      ? '⚙ Not Configured'
+                      : '✕ Failed'
                     : 'Inactive'}
                 </span>
                 {garmentStatusMap.pants?.applied && garmentStatusMap.pants.model && (
@@ -732,8 +740,10 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.shoes?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.shoes?.status === 'needs_review'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.shoes?.status === 'not_configured'
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
                     : garmentStatusMap.shoes
                     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
@@ -745,9 +755,11 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                   {garmentStatusMap.shoes
                     ? garmentStatusMap.shoes.applied
                       ? '✓ Applied'
+                      : garmentStatusMap.shoes.status === 'needs_review'
+                      ? '⚠ Needs Review'
                       : garmentStatusMap.shoes.status === 'not_configured'
-                      ? 'Model Not Configured'
-                      : 'Failed'
+                      ? '⚙ Not Configured'
+                      : '✕ Failed'
                     : 'Inactive'}
                 </span>
                 {garmentStatusMap.shoes?.applied && (
@@ -760,8 +772,10 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                 className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] border ${
                   garmentStatusMap.accessories?.applied
                     ? 'border-[#00e599]/40 bg-[#00e599]/10 text-[#00e599]'
+                    : garmentStatusMap.accessories?.status === 'needs_review'
+                    ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
                     : garmentStatusMap.accessories?.status === 'not_configured'
-                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                    ? 'border-sky-500/30 bg-sky-500/10 text-sky-300'
                     : garmentStatusMap.accessories
                     ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
                     : 'border-white/10 bg-[#16181b] text-neutral-500'
@@ -773,9 +787,11 @@ export const CenterPreview: React.FC<CenterPreviewProps> = ({
                   {garmentStatusMap.accessories
                     ? garmentStatusMap.accessories.applied
                       ? '✓ Applied'
+                      : garmentStatusMap.accessories.status === 'needs_review'
+                      ? '⚠ Needs Review'
                       : garmentStatusMap.accessories.status === 'not_configured'
-                      ? 'Model Not Configured'
-                      : 'Failed'
+                      ? '⚙ Not Configured'
+                      : '✕ Failed'
                     : 'Inactive'}
                 </span>
                 {garmentStatusMap.accessories?.applied && (

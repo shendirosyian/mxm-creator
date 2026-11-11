@@ -49,6 +49,30 @@ export const SAMPLE_GARMENTS: SampleGarment[] = [
     url: '/src/assets/images/sample_garment_streetwear_1794135332073.jpg',
     colorHex: '#121212',
   },
+  {
+    id: 'trousers',
+    name: 'Tailored Pleated Trousers',
+    slot: 'pants',
+    description: 'Charcoal wool blend with tailored crease & clean hemline',
+    url: '/src/assets/images/sample_garment_trousers.jpg',
+    colorHex: '#2D3748',
+  },
+  {
+    id: 'sneakers',
+    name: 'Minimalist Leather Sneakers',
+    slot: 'shoes',
+    description: 'Low-profile white calfskin sneakers with cushioned cupsole',
+    url: '/src/assets/images/sample_garment_sneakers.jpg',
+    colorHex: '#F9FAFB',
+  },
+  {
+    id: 'sunglasses',
+    name: 'Matte Black Sunglasses',
+    slot: 'accessories',
+    description: 'Sculpted optical acetate frames with dark tinted UV lenses',
+    url: '/src/assets/images/sample_garment_sunglasses.jpg',
+    colorHex: '#090A0F',
+  },
 ];
 
 export const PRESET_SWATCHES = [

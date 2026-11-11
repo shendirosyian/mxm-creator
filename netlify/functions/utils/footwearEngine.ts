@@ -25,7 +25,7 @@ export interface FootwearResult {
   maskBuffer?: Buffer;
   note: string;
   model: string;
-  status: 'applied' | 'failed' | 'not_configured';
+  status: 'applied' | 'needs_review' | 'not_configured' | 'failed';
 }
 
 export async function replaceFootwear(options: FootwearOptions): Promise<FootwearResult> {
@@ -36,9 +36,9 @@ export async function replaceFootwear(options: FootwearOptions): Promise<Footwea
     return {
       success: false,
       outputBuffer: options.canvasBuffer,
-      model: 'Google Gemini (gemini-3.1-flash-lite-image)',
+      model: 'Google Gemini Footwear Inpainting',
       status: 'not_configured',
-      note: 'Footwear replacement requires GEMINI_API_KEY in server environment variables. Configure in Settings > API Keys.',
+      note: 'Footwear replacement requires server GEMINI_API_KEY (starting with "AIzaSy...") for dual-foot perspective alignment & floor contact shadows. Configure in Settings > API Keys.',
     };
   }
 
